@@ -5,6 +5,7 @@ import {
   getAccountByRiotId,
   getLeagueEntriesBySummonerId,
   getLiveGameByPuuid,
+  getLolSummonerByPuuid,
   getMatchById,
   getMatchIdsByPuuid,
   getSummonerByPuuid,
@@ -93,7 +94,7 @@ export async function ensureSummonerId(
     return existing.summoner_id;
   }
 
-  const summoner = await getSummonerByPuuid(puuid);
+  const summoner = await getLolSummonerByPuuid(puuid);
   const summonerId = summoner?.id ?? null;
   if (!summonerId) {
     return null;
@@ -156,13 +157,13 @@ export async function resolveRiotDataWithWarning(
     };
   }
 
-  const summoner = await getSummonerByPuuid(puuid);
+  const summoner = await getLolSummonerByPuuid(puuid);
   const summonerId = summoner?.id ?? null;
   if (!summonerId) {
     return {
       puuid,
       summonerId: null,
-      warning: "Riot summoner not found or API unavailable."
+      warning: "Summoner not found or API unavailable."
     };
   }
 
@@ -252,6 +253,34 @@ export async function deleteTrackedPlayer(playerId: string) {
   if (error) {
     throw error;
   }
+}
+
+export async function backfillSummonerIds(limit = 25) {
+  const { data, error } = await supabaseAdmin
+    .from("tracked_players")
+    .select("id, puuid")
+    .is("summoner_id", null)
+    .not("puuid", "is", null)
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = data ?? [];
+  let updated = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const summonerId = await ensureSummonerId(row.id, row.puuid);
+    if (summonerId) {
+      updated += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return { updated, skipped, total: rows.length };
 }
 
 export async function resolveRiotData(riotId: string) {

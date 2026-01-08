@@ -128,6 +128,31 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const backfillSummoners = async () => {
+    const response = await fetch("/api/admin/backfill-summoner-ids", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit: 25 })
+    });
+
+    const data = (await response.json()) as {
+      updated?: number;
+      skipped?: number;
+      total?: number;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      setStatus(data.error ?? "Errore durante il backfill.");
+      return;
+    }
+
+    setStatus(
+      `Backfill completato: ${data.updated ?? 0} aggiornati, ${data.skipped ?? 0} saltati.`
+    );
+    await loadPlayers();
+  };
+
   const saveProfileImage = async (player: TrackedPlayer) => {
     const nextUrl = (imageEdits[player.id] ?? player.profile_image_url ?? "").trim();
     const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
@@ -196,6 +221,13 @@ export function AdminDashboard() {
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg">
         <h2 className="text-xl font-semibold text-white">Player tracciati</h2>
         <div className="mt-4 space-y-3">
+          <button
+            type="button"
+            onClick={backfillSummoners}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+          >
+            Backfill Summoner IDs
+          </button>
           {players.length === 0 ? (
             <p className="text-sm text-slate-400">Nessun player inserito.</p>
           ) : (
