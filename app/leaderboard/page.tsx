@@ -11,24 +11,31 @@ export default async function LeaderboardPage() {
   const headerList = headers();
   const host = headerList.get("host") ?? "";
   const protocol = headerList.get("x-forwarded-proto") ?? "https";
-  const baseUrl = host ? `${protocol}://${host}` : "";
+  const fallbackHost =
+    process.env.VERCEL_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const baseUrl = host
+    ? `${protocol}://${host}`
+    : fallbackHost
+      ? `https://${fallbackHost.replace(/^https?:\/\//, "")}`
+      : "";
 
-  const response = await fetch(`${baseUrl}/api/leaderboard`, {
+  const sorted = await fetch(`${baseUrl}/api/leaderboard`, {
     cache: "no-store"
-  });
-  const payload = response.ok
-    ? ((await response.json()) as {
-        results: Array<{
-          id: string;
-          riot_id: string;
-          slug: string;
-          avgPlacement: number | null;
-          live: { inGame: boolean };
-        }>;
-      })
-    : { results: [] };
-
-  const sorted = payload.results ?? [];
+  })
+    .then(async (response) =>
+      response.ok
+        ? ((await response.json()) as {
+            results: Array<{
+              id: string;
+              riot_id: string;
+              slug: string;
+              avgPlacement: number | null;
+              live: { inGame: boolean };
+            }>;
+          }).results ?? []
+        : []
+    )
+    .catch(() => []);
 
   return (
     <main className="min-h-screen py-10">

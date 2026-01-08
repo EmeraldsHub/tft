@@ -30,6 +30,7 @@ export function PlayerSyncButton({ playerId }: Props) {
 
     setStatus("Sync completato.");
     setIsLoading(false);
+    window.location.reload();
   };
 
   return (

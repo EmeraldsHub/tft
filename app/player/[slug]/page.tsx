@@ -18,13 +18,20 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
   const headerList = headers();
   const host = headerList.get("host") ?? "";
   const protocol = headerList.get("x-forwarded-proto") ?? "https";
-  const baseUrl = host ? `${protocol}://${host}` : "";
+  const fallbackHost =
+    process.env.VERCEL_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const baseUrl = host
+    ? `${protocol}://${host}`
+    : fallbackHost
+      ? `https://${fallbackHost.replace(/^https?:\/\//, "")}`
+      : "";
 
-  const response = await fetch(`${baseUrl}/api/player/${params.slug}`, {
+  const payload = await fetch(`${baseUrl}/api/player/${params.slug}`, {
     cache: "no-store"
-  });
-  const payload = response.ok
-    ? ((await response.json()) as {
+  })
+    .then(async (response) =>
+      response.ok
+        ? ((await response.json()) as {
         player: {
           id: string;
           riot_id: string;
@@ -53,13 +60,21 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           gameDateTime: number | null;
         }>;
       })
-    : {
+        : {
         player: null,
         ranked: null,
         avgPlacement: null,
         live: { inGame: false, gameStartTime: null, participantCount: null },
         recentMatches: []
-      };
+      }
+    )
+    .catch(() => ({
+      player: null,
+      ranked: null,
+      avgPlacement: null,
+      live: { inGame: false, gameStartTime: null, participantCount: null },
+      recentMatches: []
+    }));
 
   if (!payload.player) {
     return (
