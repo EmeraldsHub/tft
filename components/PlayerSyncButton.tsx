@@ -20,7 +20,10 @@ export function PlayerSyncButton({ playerId }: Props) {
       body: JSON.stringify({ id: playerId })
     });
 
-    const data = (await response.json()) as { error?: string };
+    const data = (await response.json()) as {
+      warning?: string | null;
+      error?: string;
+    };
 
     if (!response.ok) {
       setStatus(data.error ?? "Sync failed.");
@@ -28,7 +31,11 @@ export function PlayerSyncButton({ playerId }: Props) {
       return;
     }
 
-    setStatus("Sync completato.");
+    if (data.warning) {
+      setStatus(`Sync completato con avviso: ${data.warning}`);
+    } else {
+      setStatus("Sync completato.");
+    }
     setIsLoading(false);
     window.location.reload();
   };

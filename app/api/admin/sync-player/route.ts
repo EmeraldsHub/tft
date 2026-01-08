@@ -12,7 +12,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing id." }, { status: 400 });
   }
 
-  await syncTrackedPlayerById(id);
-
-  return NextResponse.json({ ok: true });
+  const result = await syncTrackedPlayerById(id);
+  return NextResponse.json(result);
 }
