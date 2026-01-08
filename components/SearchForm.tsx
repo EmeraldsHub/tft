@@ -89,21 +89,21 @@ export function SearchForm() {
             onChange={(e) => setValue(e.target.value)}
             onFocus={() => setOpen(suggestions.length > 0)}
             placeholder="Name#TAG"
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-4 py-3 text-white outline-none focus:ring-2 focus:ring-yellow-500"
+            className="w-full rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-white outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
             autoComplete="off"
           />
 
           {open && suggestions.length > 0 && (
-            <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-md border border-neutral-700 bg-neutral-950 shadow-lg">
+            <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-md border border-slate-800 bg-slate-950 shadow-lg">
               {suggestions.map((s) => (
                 <button
                   key={s.slug}
                   type="button"
                   onClick={() => router.push(`/player/${s.slug}`)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-neutral-900"
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-slate-100 transition hover:bg-slate-900"
                 >
                   <span className="text-white">{s.riot_id}</span>
-                  <span className="text-xs text-neutral-400">{s.region}</span>
+                  <span className="text-xs text-slate-400">{s.region}</span>
                 </button>
               ))}
             </div>
@@ -114,7 +114,7 @@ export function SearchForm() {
 
         <button
           type="submit"
-          className="rounded-md bg-yellow-500 px-6 py-3 font-semibold text-black hover:bg-yellow-400"
+          className="rounded-md bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
         >
           Search player
         </button>
