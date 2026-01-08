@@ -7,7 +7,8 @@ import {
   getLiveGameByPuuid,
   getMatchById,
   getMatchIdsByPuuid,
-  getSummonerByPuuid
+  getSummonerByPuuid,
+  parseRiotId
 } from "@/lib/riot";
 import { slugifyRiotId } from "@/lib/slugify";
 
@@ -85,6 +86,46 @@ export async function listTrackedPlayers() {
   return data ?? [];
 }
 
+type ResolveResult = {
+  puuid: string | null;
+  summonerId: string | null;
+  warning: string | null;
+};
+
+export async function resolveRiotDataWithWarning(
+  riotId: string
+): Promise<ResolveResult> {
+  if (!parseRiotId(riotId)) {
+    return {
+      puuid: null,
+      summonerId: null,
+      warning: "Invalid Riot ID format."
+    };
+  }
+
+  const account = await getAccountByRiotId(riotId);
+  const puuid = account?.puuid ?? null;
+  if (!puuid) {
+    return {
+      puuid: null,
+      summonerId: null,
+      warning: "Riot account not found or API unavailable."
+    };
+  }
+
+  const summoner = await getSummonerByPuuid(puuid);
+  const summonerId = summoner?.id ?? null;
+  if (!summonerId) {
+    return {
+      puuid,
+      summonerId: null,
+      warning: "Riot summoner not found or API unavailable."
+    };
+  }
+
+  return { puuid, summonerId, warning: null };
+}
+
 export async function createTrackedPlayer({
   riotId,
   region,
@@ -95,13 +136,10 @@ export async function createTrackedPlayer({
   let summonerId: string | null = null;
   let warning: string | null = null;
 
-  const resolved = await resolveRiotData(riotId);
-  if (resolved) {
-    puuid = resolved.puuid;
-    summonerId = resolved.summonerId;
-  } else {
-    warning = "Riot sync failed.";
-  }
+  const resolved = await resolveRiotDataWithWarning(riotId);
+  puuid = resolved.puuid;
+  summonerId = resolved.summonerId;
+  warning = resolved.warning;
 
   const riotDataUpdatedAt = puuid ? new Date().toISOString() : null;
   const { data, error } = await supabaseAdmin
@@ -174,21 +212,11 @@ export async function deleteTrackedPlayer(playerId: string) {
 }
 
 export async function resolveRiotData(riotId: string) {
-  const account = await getAccountByRiotId(riotId);
-  const puuid = account?.puuid ?? null;
-  if (!puuid) {
+  const resolved = await resolveRiotDataWithWarning(riotId);
+  if (!resolved.puuid || !resolved.summonerId) {
     return null;
   }
-  const summoner = await getSummonerByPuuid(puuid);
-  const summonerId = summoner?.id ?? null;
-  if (!summonerId) {
-    return null;
-  }
-
-  return {
-    puuid,
-    summonerId
-  };
+  return { puuid: resolved.puuid, summonerId: resolved.summonerId };
 }
 
 export async function syncTrackedPlayerById(playerId: string) {
@@ -206,9 +234,9 @@ export async function syncTrackedPlayerById(playerId: string) {
     return { updated: false, warning: "Only EUW1 is supported." };
   }
 
-  const resolved = await resolveRiotData(data.riot_id);
-  if (!resolved) {
-    return { updated: false, warning: "Riot sync failed." };
+  const resolved = await resolveRiotDataWithWarning(data.riot_id);
+  if (!resolved.puuid || !resolved.summonerId) {
+    return { updated: false, warning: resolved.warning ?? "Riot sync failed." };
   }
 
   const { error: updateError } = await supabaseAdmin
