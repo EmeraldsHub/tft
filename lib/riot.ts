@@ -1,10 +1,10 @@
 import "server-only";
 
-const API_KEY = process.env.RIOT_API_KEY;
-
-if (!API_KEY) {
-  throw new Error("Missing RIOT_API_KEY environment variable.");
-}
+const API_KEY =
+  process.env.RIOT_API_KEY ??
+  (() => {
+    throw new Error("Missing RIOT_API_KEY environment variable.");
+  })();
 
 const REGIONAL_BASE = "https://europe.api.riotgames.com";
 const PLATFORM_BASE = "https://euw1.api.riotgames.com";
