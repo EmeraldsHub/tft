@@ -1,11 +1,5 @@
 import "server-only";
 
-const API_KEY =
-  process.env.RIOT_API_KEY ??
-  (() => {
-    throw new Error("Missing RIOT_API_KEY environment variable.");
-  })();
-
 const REGIONAL_BASE = "https://europe.api.riotgames.com";
 const PLATFORM_BASE = "https://euw1.api.riotgames.com";
 
@@ -17,13 +11,20 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function riotFetch<T>(url: string, options?: { allow404?: false }): Promise<T>;
+async function riotFetch<T>(url: string, options: { allow404: true }): Promise<T | null>;
 async function riotFetch<T>(url: string, options: FetchOptions = {}) {
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const apiKey = process.env.RIOT_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing RIOT_API_KEY environment variable.");
+    }
+
     const response = await fetch(url, {
       headers: {
-        "X-Riot-Token": API_KEY
+        "X-Riot-Token": apiKey
       },
       cache: "no-store"
     });
@@ -85,8 +86,8 @@ export type RiotLeagueEntry = {
 };
 
 export type RiotMatch = {
-  info: {
-    participants: Array<{
+  info?: {
+    participants?: Array<{
       puuid: string;
       placement: number;
     }>;
@@ -96,8 +97,8 @@ export type RiotMatch = {
 };
 
 type LiveGame = {
-  gameStartTime: number;
-  participants: Array<unknown>;
+  gameStartTime?: number;
+  participants?: Array<unknown>;
 };
 
 const liveGameCache = new Map<

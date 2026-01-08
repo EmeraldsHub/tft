@@ -1,6 +1,7 @@
-import { ensureAveragePlacement, getLiveGameStatus, getRankedInfo, syncTrackedPlayerById } from "@/lib/riotData";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { revalidatePath } from "next/cache";
+export const dynamic = "force-dynamic";
+
+import { PlayerSyncButton } from "@/components/PlayerSyncButton";
+import { headers } from "next/headers";
 
 interface PlayerPageProps {
   params: {
@@ -9,15 +10,42 @@ interface PlayerPageProps {
 }
 
 export default async function PlayerPage({ params }: PlayerPageProps) {
-  const { data } = await supabaseAdmin
-    .from("tracked_players")
-    .select(
-      "id, riot_id, region, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at"
-    )
-    .eq("slug", params.slug)
-    .maybeSingle();
+  const headerList = headers();
+  const host = headerList.get("host") ?? "";
+  const protocol = headerList.get("x-forwarded-proto") ?? "https";
+  const baseUrl = host ? `${protocol}://${host}` : "";
 
-  if (!data || !data.is_active) {
+  const response = await fetch(`${baseUrl}/api/player/${params.slug}`, {
+    cache: "no-store"
+  });
+  const payload = response.ok
+    ? ((await response.json()) as {
+        player: {
+          id: string;
+          riot_id: string;
+          region: string;
+          puuid: string | null;
+        } | null;
+        ranked: {
+          tier: string;
+          rank: string;
+          leaguePoints: number;
+        } | null;
+        avgPlacement: number | null;
+        live: {
+          inGame: boolean;
+          gameStartTime: number | null;
+          participantCount: number | null;
+        };
+      })
+    : {
+        player: null,
+        ranked: null,
+        avgPlacement: null,
+        live: { inGame: false, gameStartTime: null, participantCount: null }
+      };
+
+  if (!payload.player) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         <h1 className="text-3xl font-semibold text-white">Player not tracked</h1>
@@ -28,14 +56,10 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
     );
   }
 
-  const player = data;
-
-  const rankedInfo = player.summoner_id
-    ? await getRankedInfo(player.summoner_id)
-    : null;
-
-  const avgPlacement = await ensureAveragePlacement(player);
-  const liveStatus = await getLiveGameStatus(player.puuid);
+  const player = payload.player;
+  const rankedInfo = payload.ranked;
+  const avgPlacement = payload.avgPlacement;
+  const liveStatus = payload.live;
 
   const liveStart = liveStatus.inGame && liveStatus.gameStartTime
     ? new Date(liveStatus.gameStartTime).toLocaleTimeString("it-IT", {
@@ -43,16 +67,6 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
         minute: "2-digit"
       })
     : null;
-
-  async function handleRefresh(formData: FormData) {
-    "use server";
-    const id = formData.get("id");
-    if (typeof id !== "string") {
-      return;
-    }
-    await syncTrackedPlayerById(id);
-    revalidatePath(`/player/${params.slug}`);
-  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
@@ -65,15 +79,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       {!player.puuid ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-6 py-5 text-slate-300">
           <p>Player tracked but Riot data not synced yet.</p>
-          <form action={handleRefresh} className="mt-4 flex justify-center">
-            <input type="hidden" name="id" value={player.id} />
-            <button
-              type="submit"
-              className="rounded-full border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
-            >
-              Refresh
-            </button>
-          </form>
+          <PlayerSyncButton playerId={player.id} />
         </div>
       ) : (
         <div className="grid w-full max-w-3xl gap-4 md:grid-cols-3">

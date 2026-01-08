@@ -95,8 +95,10 @@ export function AdminDashboard() {
   };
 
   const syncPlayer = async (player: TrackedPlayer) => {
-    const response = await fetch(`/api/admin/sync-player?id=${player.id}`, {
-      method: "POST"
+    const response = await fetch("/api/admin/sync-player", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: player.id })
     });
 
     const data = (await response.json()) as {

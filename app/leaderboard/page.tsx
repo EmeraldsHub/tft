@@ -1,43 +1,30 @@
-import { ensureAveragePlacement, getLiveGameStatus } from "@/lib/riotData";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import Link from "next/link";
-
 export const dynamic = "force-dynamic";
 
-type LeaderboardRow = {
-  id: string;
-  riot_id: string;
-  slug: string;
-  puuid: string | null;
-  avg_placement_10: number | null;
-  avg_placement_updated_at: string | null;
-};
+import Link from "next/link";
+import { headers } from "next/headers";
 
 export default async function LeaderboardPage() {
-  const { data } = await supabaseAdmin
-    .from("tracked_players")
-    .select(
-      "id, riot_id, slug, is_active, puuid, avg_placement_10, avg_placement_updated_at"
-    )
-    .eq("is_active", true)
-    .not("puuid", "is", null);
+  const headerList = headers();
+  const host = headerList.get("host") ?? "";
+  const protocol = headerList.get("x-forwarded-proto") ?? "https";
+  const baseUrl = host ? `${protocol}://${host}` : "";
 
-  const players = (data ?? []) as LeaderboardRow[];
-
-  const enriched = await Promise.all(
-    players.map(async (player) => {
-      const avg = await ensureAveragePlacement(player);
-      const live = await getLiveGameStatus(player.puuid);
-      return { ...player, avg, live };
-    })
-  );
-
-  const sorted = enriched.sort((a, b) => {
-    if (a.avg === null && b.avg === null) return 0;
-    if (a.avg === null) return 1;
-    if (b.avg === null) return -1;
-    return a.avg - b.avg;
+  const response = await fetch(`${baseUrl}/api/leaderboard`, {
+    cache: "no-store"
   });
+  const payload = response.ok
+    ? ((await response.json()) as {
+        results: Array<{
+          id: string;
+          riot_id: string;
+          slug: string;
+          avgPlacement: number | null;
+          live: { inGame: boolean };
+        }>;
+      })
+    : { results: [] };
+
+  const sorted = payload.results ?? [];
 
   return (
     <main className="min-h-screen px-6 py-16">
@@ -84,7 +71,9 @@ export default async function LeaderboardPage() {
                     </Link>
                   </div>
                   <span className="col-span-2 text-slate-200">
-                    {player.avg !== null ? player.avg.toFixed(2) : "—"}
+                    {player.avgPlacement !== null
+                      ? player.avgPlacement.toFixed(2)
+                      : "—"}
                   </span>
                   <span className="col-span-2 text-slate-400">
                     {player.live.inGame ? "In game" : "Offline"}

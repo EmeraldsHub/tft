@@ -36,21 +36,91 @@ export type RankedInfo = {
 
 export type LiveGameStatus = {
   inGame: boolean;
-  gameStartTime?: number;
-  participantCount?: number;
+  gameStartTime: number | null;
+  participantCount: number | null;
 };
+
+type CreateTrackedPlayerInput = {
+  riotId: string;
+  region: string;
+  slug: string;
+};
+
+type CreateTrackedPlayerResult = {
+  result: TrackedPlayer;
+  warning: string | null;
+};
+
+export async function listTrackedPlayers() {
+  const { data, error } = await supabaseAdmin
+    .from("tracked_players")
+    .select(
+      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at"
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function createTrackedPlayer({
+  riotId,
+  region,
+  slug
+}: CreateTrackedPlayerInput): Promise<CreateTrackedPlayerResult> {
+  let puuid: string | null = null;
+  let summonerId: string | null = null;
+  let warning: string | null = null;
+
+  try {
+    const resolved = await resolveRiotData(riotId);
+    puuid = resolved.puuid;
+    summonerId = resolved.summonerId;
+  } catch (err) {
+    warning = err instanceof Error ? err.message : "Riot sync failed.";
+  }
+
+  const riotDataUpdatedAt = puuid ? new Date().toISOString() : null;
+  const { data, error } = await supabaseAdmin
+    .from("tracked_players")
+    .insert({
+      riot_id: riotId,
+      region,
+      slug,
+      puuid,
+      summoner_id: summonerId,
+      riot_data_updated_at: riotDataUpdatedAt
+    })
+    .select(
+      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at"
+    )
+    .single();
+
+  if (error || !data) {
+    throw error ?? new Error("Failed to create tracked player.");
+  }
+
+  return { result: data, warning };
+}
 
 export async function resolveRiotData(riotId: string) {
   const account = await getAccountByRiotId(riotId);
-  if (!account) {
+  const puuid = account?.puuid ?? null;
+  if (!puuid) {
     throw new Error("Riot account not found.");
   }
-  const summoner = await getSummonerByPuuid(account.puuid);
+  const summoner = await getSummonerByPuuid(puuid);
+  const summonerId = summoner?.id ?? null;
+  if (!summonerId) {
+    throw new Error("Riot summoner not found.");
+  }
 
   return {
-    puuid: account.puuid,
-    summonerId: summoner?.id ?? null,
-
+    puuid,
+    summonerId
   };
 }
 
@@ -101,18 +171,22 @@ export async function getRankedInfo(
   }
 
   const entries = await getLeagueEntriesBySummonerId(summonerId);
-  const ranked = entries.find(
+  const ranked = (entries ?? []).find(
     (entry) => entry.queueType === "RANKED_TFT"
   );
 
-  if (!ranked) {
+  const tier = ranked?.tier ?? null;
+  const rank = ranked?.rank ?? null;
+  const leaguePoints = ranked?.leaguePoints ?? null;
+
+  if (!tier || !rank || leaguePoints === null) {
     return null;
   }
 
   return {
-    tier: ranked.tier,
-    rank: ranked.rank,
-    leaguePoints: ranked.leaguePoints
+    tier,
+    rank,
+    leaguePoints
   };
 }
 
@@ -136,7 +210,7 @@ export async function ensureAveragePlacement(
     return player.avg_placement_10;
   }
 
-  const matchIds = await getMatchIdsByPuuid(player.puuid, 10);
+  const matchIds = (await getMatchIdsByPuuid(player.puuid, 10)) ?? [];
   if (matchIds.length === 0) {
     return null;
   }
@@ -146,12 +220,14 @@ export async function ensureAveragePlacement(
   );
 
   const placements = matches
-    .map((match) =>
-      match.info.participants.find(
-        (participant) => participant.puuid === player.puuid
-      )?.placement
-    )
-    .filter((placement): placement is number => Number.isFinite(placement));
+    .map((match) => {
+      const participants = match?.info?.participants ?? [];
+      const placement =
+        participants.find((participant) => participant.puuid === player.puuid)
+          ?.placement ?? null;
+      return placement;
+    })
+    .filter((placement): placement is number => typeof placement === "number");
 
   if (placements.length === 0) {
     return null;
@@ -176,18 +252,18 @@ export async function getLiveGameStatus(
   puuid: string | null
 ): Promise<LiveGameStatus> {
   if (!puuid) {
-    return { inGame: false };
+    return { inGame: false, gameStartTime: null, participantCount: null };
   }
 
   const live = await getLiveGameByPuuid(puuid);
   if (!live) {
-    return { inGame: false };
+    return { inGame: false, gameStartTime: null, participantCount: null };
   }
 
   return {
     inGame: true,
-    gameStartTime: live.gameStartTime,
-    participantCount: live.participants.length
+    gameStartTime: live.gameStartTime ?? null,
+    participantCount: live.participants?.length ?? null
   };
 }
 

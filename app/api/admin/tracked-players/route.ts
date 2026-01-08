@@ -1,5 +1,7 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveRiotData } from "@/lib/riotData";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+import { createTrackedPlayer, listTrackedPlayers } from "@/lib/riotData";
 import { slugifyRiotId } from "@/lib/slugify";
 import { NextResponse } from "next/server";
 
@@ -13,18 +15,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("tracked_players")
-    .select(
-      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at"
-    )
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const data = await listTrackedPlayers();
+    return NextResponse.json({ results: data });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load players." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ results: data ?? [] });
 }
 
 export async function POST(request: Request) {
@@ -50,37 +49,17 @@ export async function POST(request: Request) {
   }
 
   const slug = slugifyRiotId(body.riot_id, region);
-  let puuid: string | null = null;
-  let summonerId: string | null = null;
-  let warning: string | null = null;
-
   try {
-    const resolved = await resolveRiotData(body.riot_id);
-    puuid = resolved.puuid;
-    summonerId = resolved.summonerId;
-  } catch (err) {
-    warning = err instanceof Error ? err.message : "Riot sync failed.";
-  }
-
-  const riotDataUpdatedAt = puuid ? new Date().toISOString() : null;
-  const { data, error } = await supabaseAdmin
-    .from("tracked_players")
-    .insert({
-      riot_id: body.riot_id,
+    const { result, warning } = await createTrackedPlayer({
+      riotId: body.riot_id,
       region,
-      slug,
-      puuid,
-      summoner_id: summonerId,
-      riot_data_updated_at: riotDataUpdatedAt
-    })
-    .select(
-      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at"
-    )
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+      slug
+    });
+    return NextResponse.json({ result, warning });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create player." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ result: data, warning });
 }
