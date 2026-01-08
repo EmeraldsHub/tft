@@ -49,7 +49,8 @@ export async function resolveRiotData(riotId: string) {
 
   return {
     puuid: account.puuid,
-    summonerId: summoner.id ?? null,
+    summonerId: summoner?.id ?? null,
+
   };
 }
 
