@@ -71,6 +71,49 @@ type TrackedPlayerUpdate = {
 
 const rankTtlMs = 15 * 60 * 1000;
 
+export async function ensureSummonerId(
+  playerId: string,
+  puuid: string | null
+) {
+  if (!puuid) {
+    return null;
+  }
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("tracked_players")
+    .select("summoner_id")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  if (existingError) {
+    return null;
+  }
+
+  if (existing?.summoner_id) {
+    return existing.summoner_id;
+  }
+
+  const summoner = await getSummonerByPuuid(puuid);
+  const summonerId = summoner?.id ?? null;
+  if (!summonerId) {
+    return null;
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("tracked_players")
+    .update({
+      summoner_id: summonerId,
+      riot_data_updated_at: new Date().toISOString()
+    })
+    .eq("id", playerId);
+
+  if (updateError) {
+    return null;
+  }
+
+  return summonerId;
+}
+
 export async function listTrackedPlayers() {
   const { data, error } = await supabaseAdmin
     .from("tracked_players")
@@ -252,7 +295,15 @@ export async function syncTrackedPlayerById(playerId: string) {
     return { updated: false, warning: updateError.message };
   }
 
-  return { updated: true, warning: resolved.warning };
+  const ensuredSummonerId = await ensureSummonerId(
+    data.id,
+    resolved.puuid
+  );
+
+  return {
+    updated: true,
+    warning: resolved.warning ?? (ensuredSummonerId ? null : "Summoner not found.")
+  };
 }
 
 export async function getRankedInfo(
@@ -408,22 +459,15 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     };
   }
 
-  if (data.puuid && !data.summoner_id) {
-    const summoner = await getSummonerByPuuid(data.puuid);
-    const summonerId = summoner?.id ?? null;
-    if (summonerId) {
-      await supabaseAdmin
-        .from("tracked_players")
-        .update({
-          summoner_id: summonerId,
-          riot_data_updated_at: new Date().toISOString()
-        })
-        .eq("id", data.id);
-      data = { ...data, summoner_id: summonerId };
-    }
+  const ensuredSummonerId = data.summoner_id
+    ? data.summoner_id
+    : await ensureSummonerId(data.id, data.puuid);
+
+  if (ensuredSummonerId && data.summoner_id !== ensuredSummonerId) {
+    data = { ...data, summoner_id: ensuredSummonerId };
   }
 
-  const ranked = await getRankedInfo(data.summoner_id ?? null);
+  const ranked = await getRankedInfo(ensuredSummonerId);
   const avgPlacement = await ensureAveragePlacement(data);
   const live = await getLiveGameStatus(data.puuid ?? null);
   const recentMatches = await getRecentMatches(data.puuid ?? null, 10);

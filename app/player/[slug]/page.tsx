@@ -187,12 +187,16 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                     value={
                       rankedInfo
                         ? `${rankedInfo.tier} ${rankedInfo.rank} · ${rankedInfo.leaguePoints} LP`
-                        : "Unranked / No ranked data"
+                        : player.summoner_id
+                          ? "Unranked / No ranked data"
+                          : "Rank not available yet (not synced)"
                     }
                     helper={
                       rankedInfo
                         ? undefined
-                        : "No ranked TFT data found. Play ranked to appear."
+                        : player.summoner_id
+                          ? "No ranked TFT data found. Play ranked to appear."
+                          : "Sync required to fetch ranked data."
                     }
                   />
                 </CardContent>
