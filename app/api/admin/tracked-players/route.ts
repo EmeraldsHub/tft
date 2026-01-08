@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     riot_id?: string;
     region?: string;
+    profile_image_url?: string;
   };
 
   if (!body.riot_id || !body.region) {
@@ -49,11 +50,13 @@ export async function POST(request: Request) {
   }
 
   const slug = slugifyRiotId(body.riot_id, region);
+  const profileImageUrl = body.profile_image_url?.trim() || null;
   try {
     const { result, warning } = await createTrackedPlayer({
       riotId: body.riot_id,
       region,
-      slug
+      slug,
+      profileImageUrl
     });
     return NextResponse.json({ result, warning });
   } catch (err) {

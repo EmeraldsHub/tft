@@ -11,23 +11,26 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function riotFetch<T>(url: string, options?: { allow404?: false }): Promise<T>;
-async function riotFetch<T>(url: string, options: { allow404: true }): Promise<T | null>;
 async function riotFetch<T>(url: string, options: FetchOptions = {}) {
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const apiKey = process.env.RIOT_API_KEY;
     if (!apiKey) {
-      throw new Error("Missing RIOT_API_KEY environment variable.");
+      return null;
     }
 
-    const response = await fetch(url, {
-      headers: {
-        "X-Riot-Token": apiKey
-      },
-      cache: "no-store"
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          "X-Riot-Token": apiKey
+        },
+        cache: "no-store"
+      });
+    } catch {
+      return null;
+    }
 
     if (response.status === 429) {
       const retryAfterHeader = response.headers.get("retry-after");
@@ -42,14 +45,17 @@ async function riotFetch<T>(url: string, options: FetchOptions = {}) {
     }
 
     if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`Riot API error ${response.status}: ${message}`);
+      return null;
     }
 
-    return (await response.json()) as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
   }
 
-  throw new Error("Riot API rate limit exceeded.");
+  return null;
 }
 
 export function parseRiotId(riotId: string) {
@@ -109,7 +115,7 @@ const liveGameCache = new Map<
 export async function getAccountByRiotId(riotId: string) {
   const parsed = parseRiotId(riotId);
   if (!parsed) {
-    throw new Error("Invalid Riot ID format.");
+    return null;
   }
 
   const { gameName, tagLine } = parsed;

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { deleteTrackedPlayer, updateTrackedPlayer } from "@/lib/riotData";
 import { NextResponse } from "next/server";
 
 function ensureAdmin(request: Request) {
@@ -18,24 +18,18 @@ export async function PATCH(
 
   const body = (await request.json()) as {
     is_active?: boolean;
+    profile_image_url?: string | null;
   };
 
-  if (typeof body.is_active !== "boolean") {
-    return NextResponse.json({ error: "Missing fields." }, { status: 400 });
+  try {
+    const result = await updateTrackedPlayer(params.id, body);
+    return NextResponse.json({ result });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Update failed." },
+      { status: 500 }
+    );
   }
-
-  const { data, error } = await supabaseAdmin
-    .from("tracked_players")
-    .update({ is_active: body.is_active })
-    .eq("id", params.id)
-    .select("id, riot_id, region, slug, is_active, created_at")
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ result: data });
 }
 
 export async function DELETE(
@@ -46,13 +40,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { error } = await supabaseAdmin
-    .from("tracked_players")
-    .delete()
-    .eq("id", params.id);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    await deleteTrackedPlayer(params.id);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Delete failed." },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ ok: true });

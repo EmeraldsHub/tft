@@ -30,6 +30,8 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           riot_id: string;
           region: string;
           puuid: string | null;
+          summoner_id?: string | null;
+          profile_image_url?: string | null;
           avg_placement_updated_at?: string | null;
           riot_data_updated_at?: string | null;
         } | null;
@@ -93,22 +95,43 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       })
     : "—";
 
+  const profileImageUrl = player.profile_image_url ?? null;
+
+  const isSynced = Boolean(player.puuid && player.summoner_id);
+
   return (
     <main className="min-h-screen py-10">
       <Container className="space-y-8">
         <div className="flex flex-col gap-4">
           <SectionTitle title="Player Profile" />
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-semibold text-white">{player.riot_id}</h1>
-            <Badge variant="neutral">{player.region}</Badge>
-            {liveStatus.inGame ? <Badge variant="green">Live</Badge> : null}
+          <div className="flex flex-wrap items-center gap-4">
+            {profileImageUrl ? (
+              <img
+                src={profileImageUrl}
+                alt={player.riot_id}
+                className="h-16 w-16 rounded-full border border-slate-800 object-cover"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-950 text-sm text-slate-500">
+                —
+              </div>
+            )}
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold text-white">
+                {player.riot_id}
+              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant="neutral">{player.region}</Badge>
+                {liveStatus.inGame ? <Badge variant="green">Live</Badge> : null}
+              </div>
+            </div>
           </div>
           <p className="text-sm text-slate-400">
             Last updated: {lastUpdatedLabel}
           </p>
         </div>
 
-        {!player.puuid ? (
+        {!isSynced ? (
           <Card>
             <CardHeader>
               <CardTitle>Not synced yet</CardTitle>
@@ -129,7 +152,11 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                   <Stat
                     label="Avg placement (10)"
                     value={avgPlacement !== null ? avgPlacement.toFixed(2) : "—"}
-                    helper="Lower is better."
+                    helper={
+                      avgPlacement !== null
+                        ? "Lower is better."
+                        : "Not enough matches yet."
+                    }
                     accent="yellow"
                   />
                 </CardContent>
@@ -141,7 +168,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                     value={
                       rankedInfo
                         ? `${rankedInfo.tier} ${rankedInfo.rank} · ${rankedInfo.leaguePoints} LP`
-                        : "Unranked"
+                        : "Unranked / No ranked data"
                     }
                   />
                 </CardContent>

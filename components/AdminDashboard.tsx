@@ -14,13 +14,16 @@ type TrackedPlayer = {
   avg_placement_10: number | null;
   avg_placement_updated_at: string | null;
   riot_data_updated_at: string | null;
+  profile_image_url: string | null;
 };
 
 export function AdminDashboard() {
   const [players, setPlayers] = useState<TrackedPlayer[]>([]);
   const [riotId, setRiotId] = useState("");
   const [region, setRegion] = useState("EUW1");
+  const [profileImageUrl, setProfileImageUrl] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [imageEdits, setImageEdits] = useState<Record<string, string>>({});
 
   const loadPlayers = async () => {
     const response = await fetch("/api/admin/tracked-players");
@@ -41,10 +44,15 @@ export function AdminDashboard() {
     event.preventDefault();
     setStatus(null);
 
+    const trimmedImageUrl = profileImageUrl.trim();
     const response = await fetch("/api/admin/tracked-players", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ riot_id: riotId, region })
+      body: JSON.stringify({
+        riot_id: riotId,
+        region,
+        profile_image_url: trimmedImageUrl || null
+      })
     });
 
     const data = (await response.json()) as {
@@ -60,6 +68,7 @@ export function AdminDashboard() {
 
     setRiotId("");
     setRegion("EUW1");
+    setProfileImageUrl("");
     if (data.warning) {
       setStatus(`Player aggiunto. Sync Riot fallita: ${data.warning}`);
     }
@@ -119,6 +128,23 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const saveProfileImage = async (player: TrackedPlayer) => {
+    const nextUrl = (imageEdits[player.id] ?? player.profile_image_url ?? "").trim();
+    const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_image_url: nextUrl || null })
+    });
+
+    if (!response.ok) {
+      setStatus("Errore durante il salvataggio immagine.");
+      return;
+    }
+
+    setStatus("Immagine aggiornata.");
+    await loadPlayers();
+  };
+
   const formatDate = (value: string | null) => {
     if (!value) {
       return "—";
@@ -135,7 +161,7 @@ export function AdminDashboard() {
     <div className="space-y-10">
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg">
         <h2 className="text-xl font-semibold text-white">Aggiungi player</h2>
-        <form onSubmit={handleAddPlayer} className="mt-4 grid gap-4 md:grid-cols-3">
+        <form onSubmit={handleAddPlayer} className="mt-4 grid gap-4 md:grid-cols-4">
           <input
             value={riotId}
             onChange={(event) => setRiotId(event.target.value)}
@@ -151,6 +177,12 @@ export function AdminDashboard() {
           >
             <option value="EUW1">EUW1</option>
           </select>
+          <input
+            value={profileImageUrl}
+            onChange={(event) => setProfileImageUrl(event.target.value)}
+            placeholder="Profile image URL (optional)"
+            className="rounded-lg border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
+          />
           <button
             type="submit"
             className="rounded-lg bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 text-base font-semibold text-slate-900 shadow-glow transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tft-accent"
@@ -172,7 +204,19 @@ export function AdminDashboard() {
                 key={player.id}
                 className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-4 md:flex-row md:items-center md:justify-between"
               >
-                <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  {player.profile_image_url ? (
+                    <img
+                      src={player.profile_image_url}
+                      alt={player.riot_id}
+                      className="h-12 w-12 rounded-full border border-slate-700 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-xs text-slate-400">
+                      —
+                    </div>
+                  )}
+                  <div>
                   <p className="text-sm font-semibold text-white">{player.riot_id}</p>
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
                     {player.region} · {player.slug}
@@ -188,8 +232,27 @@ export function AdminDashboard() {
                       : "—"}{" "}
                     · Aggiornato: {formatDate(player.avg_placement_updated_at)}
                   </p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <input
+                    value={imageEdits[player.id] ?? player.profile_image_url ?? ""}
+                    onChange={(event) =>
+                      setImageEdits((prev) => ({
+                        ...prev,
+                        [player.id]: event.target.value
+                      }))
+                    }
+                    placeholder="Profile image URL"
+                    className="min-w-[220px] rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => saveProfileImage(player)}
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+                  >
+                    Save
+                  </button>
                   <button
                     type="button"
                     onClick={() => syncPlayer(player)}
