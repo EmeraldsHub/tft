@@ -21,6 +21,13 @@ type TrackedPlayer = {
   riot_data_updated_at: string | null;
 };
 
+type AvgPlacementSource = {
+  id: string;
+  puuid: string | null;
+  avg_placement_10: number | null;
+  avg_placement_updated_at: string | null;
+};
+
 export type RankedInfo = {
   tier: string;
   rank: string;
@@ -114,7 +121,7 @@ function isFresh(timestamp: string | null, ttlMs: number) {
 }
 
 export async function ensureAveragePlacement(
-  player: TrackedPlayer,
+  player: AvgPlacementSource,
   force = false
 ) {
   if (!player.puuid) {
