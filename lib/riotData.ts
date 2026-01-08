@@ -42,6 +42,9 @@ export type LiveGameStatus = {
 
 export async function resolveRiotData(riotId: string) {
   const account = await getAccountByRiotId(riotId);
+  if (!account) {
+    throw new Error("Riot account not found.");
+  }
   const summoner = await getSummonerByPuuid(account.puuid);
 
   return {
