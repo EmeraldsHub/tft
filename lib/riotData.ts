@@ -235,7 +235,7 @@ export async function syncTrackedPlayerById(playerId: string) {
   }
 
   const resolved = await resolveRiotDataWithWarning(data.riot_id);
-  if (!resolved.puuid || !resolved.summonerId) {
+  if (!resolved.puuid) {
     return { updated: false, warning: resolved.warning ?? "Riot sync failed." };
   }
 
@@ -243,7 +243,7 @@ export async function syncTrackedPlayerById(playerId: string) {
     .from("tracked_players")
     .update({
       puuid: resolved.puuid,
-      summoner_id: resolved.summonerId,
+      summoner_id: resolved.summonerId ?? null,
       riot_data_updated_at: new Date().toISOString()
     })
     .eq("id", data.id);
@@ -252,7 +252,7 @@ export async function syncTrackedPlayerById(playerId: string) {
     return { updated: false, warning: updateError.message };
   }
 
-  return { updated: true, warning: null };
+  return { updated: true, warning: resolved.warning };
 }
 
 export async function getRankedInfo(

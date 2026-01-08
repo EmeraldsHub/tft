@@ -116,7 +116,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
 
   const profileImageUrl = player.profile_image_url ?? null;
 
-  const isSynced = Boolean(player.puuid && player.summoner_id);
+  const hasPuuid = Boolean(player.puuid);
 
   return (
     <main className="min-h-screen py-10">
@@ -150,7 +150,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           </p>
         </div>
 
-        {!isSynced ? (
+        {!hasPuuid ? (
           <Card>
             <CardHeader>
               <CardTitle>Not synced yet</CardTitle>
