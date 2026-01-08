@@ -13,7 +13,10 @@ export function SearchForm() {
   const [open, setOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const normalizedValue = useMemo(() => value.trim(), [value]);
+  const normalizedValue = useMemo(
+    () => value.trim().replace(/^\/+/, ""),
+    [value]
+  );
 
   useEffect(() => {
     const q = normalizedValue;
@@ -86,7 +89,10 @@ export function SearchForm() {
           <input
             id="riotId"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              const nextValue = e.target.value.replace(/^\/+/, "");
+              setValue(nextValue);
+            }}
             onFocus={() => setOpen(suggestions.length > 0)}
             placeholder="Name#TAG"
             className="w-full rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-white outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
