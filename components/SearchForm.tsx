@@ -120,7 +120,7 @@ export function SearchForm() {
 
         <button
           type="submit"
-          className="rounded-md bg-yellow-500 px-6 py-3 font-semibold text-slate-900 transition hover:bg-yellow-400"
+          className="rounded-md bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
         >
           Search player
         </button>
