@@ -1,18 +1,20 @@
+import Link from "next/link";
+
 const leaderboardCards = [
   {
-    title: "Top player",
-    value: "In arrivo",
-    description: "Leaderboard nazionale con filtri per regioni."
+    title: "Avg placement",
+    value: "Top 10",
+    description: "Media piazzamenti ultimi 10 match."
   },
   {
-    title: "Rank",
-    value: "In arrivo",
-    description: "Progressione dettagliata di LP e divisioni."
+    title: "Live status",
+    value: "EUW1",
+    description: "Stato live con spettatore attivo."
   },
   {
-    title: "Winrate",
-    value: "In arrivo",
-    description: "Andamento stagionale e insight sulle patch."
+    title: "Ranked",
+    value: "TFT",
+    description: "Tier, divisione e LP aggiornati."
   }
 ];
 
@@ -21,10 +23,10 @@ export function LeaderboardSection() {
     <section className="px-6 pb-24">
       <div className="mx-auto max-w-5xl">
         <div className="mb-10 flex flex-col gap-3">
-          <h2 className="text-2xl font-semibold text-white">Leaderboard (in arrivo)</h2>
+          <h2 className="text-2xl font-semibold text-white">Leaderboard</h2>
           <p className="text-slate-400">
-            Stiamo preparando la classifica italiana con statistiche avanzate e
-            aggiornamenti live.
+            Classifica pubblica dei player tracciati con media piazzamenti e live
+            status.
           </p>
         </div>
         <div className="grid gap-6 md:grid-cols-3">
@@ -42,6 +44,14 @@ export function LeaderboardSection() {
               <p className="mt-3 text-sm text-slate-400">{card.description}</p>
             </div>
           ))}
+        </div>
+        <div className="mt-8">
+          <Link
+            href="/leaderboard"
+            className="inline-flex items-center rounded-full border border-slate-700 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+          >
+            View leaderboard
+          </Link>
         </div>
       </div>
     </section>

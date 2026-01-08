@@ -9,12 +9,17 @@ type TrackedPlayer = {
   slug: string;
   is_active: boolean;
   created_at: string;
+  puuid: string | null;
+  summoner_id: string | null;
+  avg_placement_10: number | null;
+  avg_placement_updated_at: string | null;
+  riot_data_updated_at: string | null;
 };
 
 export function AdminDashboard() {
   const [players, setPlayers] = useState<TrackedPlayer[]>([]);
   const [riotId, setRiotId] = useState("");
-  const [region, setRegion] = useState("");
+  const [region, setRegion] = useState("EUW1");
   const [status, setStatus] = useState<string | null>(null);
 
   const loadPlayers = async () => {
@@ -42,13 +47,22 @@ export function AdminDashboard() {
       body: JSON.stringify({ riot_id: riotId, region })
     });
 
+    const data = (await response.json()) as {
+      result?: TrackedPlayer;
+      warning?: string | null;
+      error?: string;
+    };
+
     if (!response.ok) {
-      setStatus("Errore durante l'aggiunta.");
+      setStatus(data.error ?? "Errore durante l'aggiunta.");
       return;
     }
 
     setRiotId("");
-    setRegion("");
+    setRegion("EUW1");
+    if (data.warning) {
+      setStatus(`Player aggiunto. Sync Riot fallita: ${data.warning}`);
+    }
     await loadPlayers();
   };
 
@@ -80,6 +94,41 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const syncPlayer = async (player: TrackedPlayer) => {
+    const response = await fetch(`/api/admin/sync-player?id=${player.id}`, {
+      method: "POST"
+    });
+
+    const data = (await response.json()) as {
+      warning?: string | null;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      setStatus(data.error ?? "Errore durante il sync.");
+      return;
+    }
+
+    if (data.warning) {
+      setStatus(`Sync completato con avviso: ${data.warning}`);
+    } else {
+      setStatus("Sync completato.");
+    }
+    await loadPlayers();
+  };
+
+  const formatDate = (value: string | null) => {
+    if (!value) {
+      return "—";
+    }
+    return new Date(value).toLocaleString("it-IT", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
   return (
     <div className="space-y-10">
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg">
@@ -92,13 +141,14 @@ export function AdminDashboard() {
             className="rounded-lg border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
             required
           />
-          <input
+          <select
             value={region}
             onChange={(event) => setRegion(event.target.value)}
-            placeholder="Region (EUW1)"
             className="rounded-lg border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
             required
-          />
+          >
+            <option value="EUW1">EUW1</option>
+          </select>
           <button
             type="submit"
             className="rounded-lg bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 text-base font-semibold text-slate-900 shadow-glow transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tft-accent"
@@ -125,8 +175,26 @@ export function AdminDashboard() {
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
                     {player.region} · {player.slug}
                   </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Riot sync: {player.puuid ? "OK" : "Pending"} · Ultimo sync:{" "}
+                    {formatDate(player.riot_data_updated_at)}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Avg placement:{" "}
+                    {player.avg_placement_10 !== null
+                      ? player.avg_placement_10.toFixed(2)
+                      : "—"}{" "}
+                    · Aggiornato: {formatDate(player.avg_placement_updated_at)}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => syncPlayer(player)}
+                    className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+                  >
+                    Sync
+                  </button>
                   <button
                     type="button"
                     onClick={() => togglePlayer(player)}
