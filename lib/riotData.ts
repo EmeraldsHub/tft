@@ -331,7 +331,7 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     .select(
       "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
     )
-    .eq("slug", slugOrRiotId)
+    .ilike("slug", slugOrRiotId)
     .maybeSingle();
 
   if (!data && slugOrRiotId.includes("#")) {

@@ -16,7 +16,8 @@ interface PlayerPageProps {
 
 export default async function PlayerPage({ params }: PlayerPageProps) {
   const headerList = headers();
-  const host = headerList.get("host") ?? "";
+  const host =
+    headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "";
   const protocol = headerList.get("x-forwarded-proto") ?? "https";
   const fallbackHost =
     process.env.VERCEL_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
@@ -26,9 +27,12 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       ? `https://${fallbackHost.replace(/^https?:\/\//, "")}`
       : "";
 
-  const payload = await fetch(`${baseUrl}/api/player/${params.slug}`, {
+  const payload = await fetch(
+    `${baseUrl}/api/player/${encodeURIComponent(params.slug)}`,
+    {
     cache: "no-store"
-  })
+    }
+  )
     .then(async (response) =>
       response.ok
         ? ((await response.json()) as {
