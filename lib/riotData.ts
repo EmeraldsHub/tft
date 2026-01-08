@@ -9,6 +9,7 @@ import {
   getMatchIdsByPuuid,
   getSummonerByPuuid
 } from "@/lib/riot";
+import { slugifyRiotId } from "@/lib/slugify";
 
 type TrackedPlayer = {
   id: string;
@@ -324,14 +325,39 @@ export async function ensureAveragePlacement(
   return rounded;
 }
 
-export async function getPlayerProfileBySlug(slug: string) {
-  const { data } = await supabaseAdmin
+export async function getPlayerProfileBySlug(slugOrRiotId: string) {
+  let { data } = await supabaseAdmin
     .from("tracked_players")
     .select(
       "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
     )
-    .eq("slug", slug)
+    .eq("slug", slugOrRiotId)
     .maybeSingle();
+
+  if (!data && slugOrRiotId.includes("#")) {
+    const normalizedSlug = slugifyRiotId(slugOrRiotId, "EUW1");
+    if (normalizedSlug !== slugOrRiotId) {
+      const { data: slugMatch } = await supabaseAdmin
+        .from("tracked_players")
+        .select(
+          "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
+        )
+        .eq("slug", normalizedSlug)
+        .maybeSingle();
+      data = slugMatch ?? data;
+    }
+
+    if (!data) {
+      const { data: riotIdMatch } = await supabaseAdmin
+        .from("tracked_players")
+        .select(
+          "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
+        )
+        .ilike("riot_id", slugOrRiotId)
+        .maybeSingle();
+      data = riotIdMatch ?? data;
+    }
+  }
 
   if (!data || !data.is_active) {
     return {
