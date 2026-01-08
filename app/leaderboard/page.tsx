@@ -2,6 +2,10 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { headers } from "next/headers";
+import { Badge } from "@/components/ui/Badge";
+import { Card, CardContent } from "@/components/ui/Card";
+import { Container } from "@/components/ui/Container";
+import { SectionTitle } from "@/components/ui/SectionTitle";
 
 export default async function LeaderboardPage() {
   const headerList = headers();
@@ -27,63 +31,62 @@ export default async function LeaderboardPage() {
   const sorted = payload.results ?? [];
 
   return (
-    <main className="min-h-screen px-6 py-16">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
-            Leaderboard
-          </p>
-          <h1 className="text-3xl font-semibold text-white">
-            Best average placement (last 10)
-          </h1>
-          <p className="text-slate-400">
-            EUW-only MVP. Average placement updates every 15 minutes.
-          </p>
-        </div>
+    <main className="min-h-screen py-10">
+      <Container className="space-y-8">
+        <SectionTitle
+          title="Leaderboard"
+          description="Best average placement over the last 10 matches."
+        />
 
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
-          <div className="grid grid-cols-12 gap-4 border-b border-slate-800 px-6 py-4 text-xs uppercase tracking-[0.3em] text-slate-500">
-            <span className="col-span-2">Rank</span>
-            <span className="col-span-6">Player</span>
-            <span className="col-span-2">Avg</span>
-            <span className="col-span-2">Status</span>
-          </div>
-          <div className="divide-y divide-slate-800">
-            {sorted.length === 0 ? (
-              <div className="px-6 py-6 text-sm text-slate-400">
-                Nessun player sincronizzato.
-              </div>
-            ) : (
-              sorted.map((player, index) => (
-                <div
-                  key={player.id}
-                  className="grid grid-cols-12 items-center gap-4 px-6 py-4 text-sm"
-                >
-                  <span className="col-span-2 text-slate-400">
-                    #{index + 1}
-                  </span>
-                  <div className="col-span-6">
-                    <Link
-                      href={`/player/${player.slug}`}
-                      className="font-semibold text-white transition hover:text-tft-accent"
-                    >
-                      {player.riot_id}
-                    </Link>
-                  </div>
-                  <span className="col-span-2 text-slate-200">
-                    {player.avgPlacement !== null
-                      ? player.avgPlacement.toFixed(2)
-                      : "—"}
-                  </span>
-                  <span className="col-span-2 text-slate-400">
-                    {player.live.inGame ? "In game" : "Offline"}
-                  </span>
+        <Card>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-12 gap-4 text-xs uppercase tracking-[0.3em] text-slate-500">
+              <span className="col-span-2">Rank</span>
+              <span className="col-span-6">Player</span>
+              <span className="col-span-2">Avg</span>
+              <span className="col-span-2">Status</span>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {sorted.length === 0 ? (
+                <div className="py-4 text-sm text-slate-400">
+                  Nessun player sincronizzato.
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+              ) : (
+                sorted.map((player, index) => (
+                  <div
+                    key={player.id}
+                    className="grid grid-cols-12 items-center gap-4 py-4 text-sm"
+                  >
+                    <span className="col-span-2 text-slate-400">
+                      #{index + 1}
+                    </span>
+                    <div className="col-span-6">
+                      <Link
+                        href={`/player/${player.slug}`}
+                        className="font-semibold text-white transition hover:text-yellow-300"
+                      >
+                        {player.riot_id}
+                      </Link>
+                    </div>
+                    <span className="col-span-2 text-slate-200">
+                      {player.avgPlacement !== null
+                        ? player.avgPlacement.toFixed(2)
+                        : "—"}
+                    </span>
+                    <div className="col-span-2">
+                      {player.live.inGame ? (
+                        <Badge variant="green">Live</Badge>
+                      ) : (
+                        <Badge variant="neutral">Offline</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </Container>
     </main>
   );
 }

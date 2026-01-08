@@ -40,6 +40,13 @@ export type LiveGameStatus = {
   participantCount: number | null;
 };
 
+export type MatchSummary = {
+  matchId: string;
+  placement: number | null;
+  gameStartTime: number | null;
+  gameDateTime: number | null;
+};
+
 type CreateTrackedPlayerInput = {
   riotId: string;
   region: string;
@@ -246,6 +253,40 @@ export async function ensureAveragePlacement(
     .eq("id", player.id);
 
   return rounded;
+}
+
+export async function getRecentMatches(
+  puuid: string | null,
+  count = 10
+): Promise<MatchSummary[]> {
+  if (!puuid) {
+    return [];
+  }
+
+  const matchIds = (await getMatchIdsByPuuid(puuid, count)) ?? [];
+  if (matchIds.length === 0) {
+    return [];
+  }
+
+  const matches = await Promise.all(
+    matchIds.map(async (matchId) => getMatchById(matchId))
+  );
+
+  return matchIds.map((matchId, index) => {
+    const match = matches[index];
+    const info = match?.info;
+    const participants = info?.participants ?? [];
+    const placement =
+      participants.find((participant) => participant.puuid === puuid)
+        ?.placement ?? null;
+
+    return {
+      matchId,
+      placement,
+      gameStartTime: info?.game_start_time ?? null,
+      gameDateTime: info?.game_datetime ?? null
+    };
+  });
 }
 
 export async function getLiveGameStatus(

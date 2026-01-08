@@ -95,7 +95,7 @@ export function SearchForm() {
             }}
             onFocus={() => setOpen(suggestions.length > 0)}
             placeholder="Name#TAG"
-            className="w-full rounded-md border border-slate-700 bg-slate-900/70 px-4 py-3 text-white outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
+            className="w-full rounded-md border border-slate-800 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-yellow-500/60 focus:ring-2 focus:ring-yellow-500/30"
             autoComplete="off"
           />
 
@@ -106,7 +106,7 @@ export function SearchForm() {
                   key={s.slug}
                   type="button"
                   onClick={() => router.push(`/player/${s.slug}`)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-slate-100 transition hover:bg-slate-900"
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-slate-100 transition hover:bg-slate-900/80"
                 >
                   <span className="text-white">{s.riot_id}</span>
                   <span className="text-xs text-slate-400">{s.region}</span>
@@ -120,7 +120,7 @@ export function SearchForm() {
 
         <button
           type="submit"
-          className="rounded-md bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
+          className="rounded-md bg-yellow-500 px-6 py-3 font-semibold text-slate-900 transition hover:bg-yellow-400"
         >
           Search player
         </button>

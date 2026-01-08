@@ -1,6 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { PlayerSyncButton } from "@/components/PlayerSyncButton";
+import { Badge } from "@/components/ui/Badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Container } from "@/components/ui/Container";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+import { Stat } from "@/components/ui/Stat";
 import { headers } from "next/headers";
 
 interface PlayerPageProps {
@@ -25,6 +30,8 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           riot_id: string;
           region: string;
           puuid: string | null;
+          avg_placement_updated_at?: string | null;
+          riot_data_updated_at?: string | null;
         } | null;
         ranked: {
           tier: string;
@@ -37,12 +44,19 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           gameStartTime: number | null;
           participantCount: number | null;
         };
+        recentMatches: Array<{
+          matchId: string;
+          placement: number | null;
+          gameStartTime: number | null;
+          gameDateTime: number | null;
+        }>;
       })
     : {
         player: null,
         ranked: null,
         avgPlacement: null,
-        live: { inGame: false, gameStartTime: null, participantCount: null }
+        live: { inGame: false, gameStartTime: null, participantCount: null },
+        recentMatches: []
       };
 
   if (!payload.player) {
@@ -68,62 +82,153 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       })
     : null;
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-8 py-6 shadow-lg">
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Profilo</p>
-        <h1 className="mt-3 text-3xl font-semibold text-white">{player.riot_id}</h1>
-        <p className="mt-2 text-sm text-slate-400">{player.region}</p>
-      </div>
+  const lastUpdated =
+    player.avg_placement_updated_at ?? player.riot_data_updated_at ?? null;
+  const lastUpdatedLabel = lastUpdated
+    ? new Date(lastUpdated).toLocaleString("it-IT", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : "—";
 
-      {!player.puuid ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-6 py-5 text-slate-300">
-          <p>Player tracked but Riot data not synced yet.</p>
-          <PlayerSyncButton playerId={player.id} />
+  return (
+    <main className="min-h-screen py-10">
+      <Container className="space-y-8">
+        <div className="flex flex-col gap-4">
+          <SectionTitle title="Player Profile" />
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold text-white">{player.riot_id}</h1>
+            <Badge variant="neutral">{player.region}</Badge>
+            {liveStatus.inGame ? <Badge variant="green">Live</Badge> : null}
+          </div>
+          <p className="text-sm text-slate-400">
+            Last updated: {lastUpdatedLabel}
+          </p>
         </div>
-      ) : (
-        <div className="grid w-full max-w-3xl gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-              Ranked
-            </p>
-            {rankedInfo ? (
-              <p className="mt-3 text-lg font-semibold text-white">
-                {rankedInfo.tier} {rankedInfo.rank} · {rankedInfo.leaguePoints} LP
+
+        {!player.puuid ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Not synced yet</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-slate-300">
+              <p>
+                Riot data is not available yet for this player. Run a sync to
+                fetch ranked and match stats.
               </p>
-            ) : (
-              <p className="mt-3 text-sm text-slate-400">Unranked</p>
-            )}
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-              Avg placement (10)
-            </p>
-            <p className="mt-3 text-lg font-semibold text-white">
-              {avgPlacement !== null ? avgPlacement.toFixed(2) : "—"}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Lower is better.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-              Live game
-            </p>
-            {liveStatus.inGame ? (
-              <div className="mt-3 space-y-1 text-sm text-slate-200">
-                <p className="font-semibold text-white">In game</p>
-                {liveStart ? <p>Start: {liveStart}</p> : null}
-                {liveStatus.participantCount ? (
-                  <p>Players: {liveStatus.participantCount}</p>
-                ) : null}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-400">Not in game</p>
-            )}
-          </div>
-        </div>
-      )}
+              <PlayerSyncButton playerId={player.id} />
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardContent>
+                  <Stat
+                    label="Avg placement (10)"
+                    value={avgPlacement !== null ? avgPlacement.toFixed(2) : "—"}
+                    helper="Lower is better."
+                    accent="yellow"
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <Stat
+                    label="Rank"
+                    value={
+                      rankedInfo
+                        ? `${rankedInfo.tier} ${rankedInfo.rank} · ${rankedInfo.leaguePoints} LP`
+                        : "Unranked"
+                    }
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <Stat
+                    label="Matches analyzed"
+                    value={payload.recentMatches.length}
+                    helper="Last 10 matches."
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <Stat label="Last updated" value={lastUpdatedLabel} />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Live game</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-300">
+                {liveStatus.inGame ? (
+                  <div className="space-y-2">
+                    <p className="text-white">In game</p>
+                    <p>Start: {liveStart ?? "—"}</p>
+                    <p>Participants: {liveStatus.participantCount ?? "—"}</p>
+                  </div>
+                ) : (
+                  <p>Not in game</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Last 10 matches</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {payload.recentMatches.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    No match data available yet.
+                  </p>
+                ) : (
+                  payload.recentMatches.map((match) => {
+                    const placement = match.placement ?? null;
+                    const shortId = match.matchId.slice(-6);
+                    const timestamp = match.gameStartTime ?? match.gameDateTime;
+                    const timeLabel = timestamp
+                      ? new Date(timestamp).toLocaleString("it-IT", {
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })
+                      : "—";
+
+                    return (
+                      <div
+                        key={match.matchId}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl font-semibold text-white">
+                            {placement ?? "—"}
+                          </span>
+                          <div className="text-xs text-slate-400">
+                            Match {shortId} · {timeLabel}
+                          </div>
+                        </div>
+                        {placement !== null && placement <= 4 ? (
+                          <Badge variant="yellow">Top 4</Badge>
+                        ) : (
+                          <Badge variant="neutral">Result</Badge>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </Container>
     </main>
   );
 }

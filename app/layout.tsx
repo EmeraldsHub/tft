@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PublicNav } from "@/components/PublicNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,7 +24,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="it">
-      <body className="min-h-screen bg-gradient-to-b from-tft-darker via-tft-dark to-black">
+      <body className="min-h-screen bg-slate-950 text-slate-100">
+        <PublicNav />
         {children}
       </body>
     </html>
