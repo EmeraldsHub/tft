@@ -189,6 +189,11 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                         ? `${rankedInfo.tier} ${rankedInfo.rank} · ${rankedInfo.leaguePoints} LP`
                         : "Unranked / No ranked data"
                     }
+                    helper={
+                      rankedInfo
+                        ? undefined
+                        : "No ranked TFT data found. Play ranked to appear."
+                    }
                   />
                 </CardContent>
               </Card>

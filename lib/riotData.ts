@@ -387,6 +387,17 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     }
   }
 
+  if (!data && !slugOrRiotId.includes("#")) {
+    const { data: riotIdMatch } = await supabaseAdmin
+      .from("tracked_players")
+      .select(
+        "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
+      )
+      .ilike("riot_id", `${slugOrRiotId}#%`)
+      .maybeSingle();
+    data = riotIdMatch ?? data;
+  }
+
   if (!data || !data.is_active) {
     return {
       player: null,
@@ -395,6 +406,21 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
       live: { inGame: false, gameStartTime: null, participantCount: null },
       recentMatches: []
     };
+  }
+
+  if (data.puuid && !data.summoner_id) {
+    const summoner = await getSummonerByPuuid(data.puuid);
+    const summonerId = summoner?.id ?? null;
+    if (summonerId) {
+      await supabaseAdmin
+        .from("tracked_players")
+        .update({
+          summoner_id: summonerId,
+          riot_data_updated_at: new Date().toISOString()
+        })
+        .eq("id", data.id);
+      data = { ...data, summoner_id: summonerId };
+    }
   }
 
   const ranked = await getRankedInfo(data.summoner_id ?? null);
