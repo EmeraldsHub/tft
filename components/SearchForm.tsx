@@ -1,72 +1,124 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+
+type Suggestion = { riot_id: string; region: string; slug: string };
 
 export function SearchForm() {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const normalizedValue = useMemo(() => value.trim(), [value]);
+
+  useEffect(() => {
+    const q = normalizedValue;
+    setError("");
+
+    if (!q) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+
+    // debounce
+    const t = setTimeout(async () => {
+      try {
+        abortRef.current?.abort();
+        const ac = new AbortController();
+        abortRef.current = ac;
+
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+          signal: ac.signal,
+        });
+
+        if (!res.ok) {
+          setSuggestions([]);
+          setOpen(false);
+          return;
+        }
+
+        const data = (await res.json()) as { suggestions: Suggestion[] };
+        setSuggestions(data.suggestions ?? []);
+        setOpen((data.suggestions ?? []).length > 0);
+      } catch {
+        // ignore aborted/failed requests
+      }
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [normalizedValue]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmed = value.trim();
+    const trimmed = normalizedValue;
 
-    const hashIndex = trimmed.indexOf("#");
-    const lastHashIndex = trimmed.lastIndexOf("#");
+    if (!trimmed) {
+      setError("Type a Riot ID first (Name#TAG).");
+      return;
+    }
 
-    if (
-      hashIndex <= 0 ||
-      hashIndex === trimmed.length - 1 ||
-      hashIndex !== lastHashIndex
-    ) {
-      setError("Inserisci un Riot ID nel formato nome#TAG.");
+    const match = suggestions.find(
+      (s) => s.riot_id.toLowerCase() === trimmed.toLowerCase()
+    );
+
+    if (!match) {
+      setError("Player not tracked yet. Pick one from the suggestions.");
       return;
     }
 
     setError("");
-    router.push(`/player/${encodeURIComponent(trimmed)}`);
+    setOpen(false);
+    router.push(`/player/${match.slug}`);
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="mx-auto flex w-full max-w-xl flex-col gap-3"
-    >
-      <label htmlFor="riot-id" className="text-sm font-medium text-slate-200">
-        Cerca giocatore
-      </label>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <input
-          id="riot-id"
-          name="riotId"
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          placeholder="nome#TAG"
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            if (error) {
-              setError("");
-            }
-          }}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? "riot-id-error" : undefined}
-          className="flex-1 rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3 text-base text-slate-100 shadow-sm outline-none transition focus:border-tft-accent focus:ring-2 focus:ring-tft-accent/40"
-        />
+    <div className="mx-auto w-full max-w-xl">
+      <form onSubmit={handleSubmit} className="flex w-full flex-col gap-3">
+        <div className="relative">
+          <label htmlFor="riotId" className="sr-only">
+            Search player
+          </label>
+          <input
+            id="riotId"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onFocus={() => setOpen(suggestions.length > 0)}
+            placeholder="Name#TAG"
+            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-4 py-3 text-white outline-none focus:ring-2 focus:ring-yellow-500"
+            autoComplete="off"
+          />
+
+          {open && suggestions.length > 0 && (
+            <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-md border border-neutral-700 bg-neutral-950 shadow-lg">
+              {suggestions.map((s) => (
+                <button
+                  key={s.slug}
+                  type="button"
+                  onClick={() => router.push(`/player/${s.slug}`)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-neutral-900"
+                >
+                  <span className="text-white">{s.riot_id}</span>
+                  <span className="text-xs text-neutral-400">{s.region}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
         <button
           type="submit"
-          className="rounded-lg bg-gradient-to-r from-tft-accent to-tft-accent-strong px-6 py-3 text-base font-semibold text-slate-900 shadow-glow transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tft-accent"
+          className="rounded-md bg-yellow-500 px-6 py-3 font-semibold text-black hover:bg-yellow-400"
         >
-          Cerca giocatore
+          Search player
         </button>
-      </div>
-      {error ? (
-        <p id="riot-id-error" className="text-sm text-rose-400">
-          {error}
-        </p>
-      ) : null}
-    </form>
+      </form>
+    </div>
   );
 }
