@@ -15,14 +15,17 @@ export async function POST(request: Request) {
   }
 
   if (!password || password !== expectedPassword) {
-    return NextResponse.redirect(new URL("/admin/login?error=1", request.url));
+    return NextResponse.redirect(
+      new URL("/admin/login?error=1", request.url),
+      303
+    );
   }
 
-  const response = NextResponse.redirect(new URL("/admin", request.url));
+  const response = NextResponse.redirect(new URL("/admin", request.url), 303);
   response.cookies.set(sessionCookieName, "authenticated", {
     httpOnly: true,
     sameSite: "lax",
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7
   });
