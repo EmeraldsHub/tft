@@ -21,6 +21,12 @@ export function PublicNav() {
           >
             Leaderboard
           </Link>
+          <Link
+            href="/admin"
+            className="rounded-full border border-slate-800 px-4 py-2 transition hover:border-yellow-400 hover:text-yellow-300"
+          >
+            Admin
+          </Link>
         </div>
       </Container>
     </nav>
