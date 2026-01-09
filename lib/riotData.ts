@@ -663,6 +663,7 @@ export async function getLeaderboardData() {
         "riot_id",
         "slug",
         "region",
+        "is_active",
         "avg_placement_10",
         "live_in_game",
         "ranked_tier",
@@ -671,7 +672,7 @@ export async function getLeaderboardData() {
         "ranked_queue"
       ].join(",")
     )
-    .eq("is_active", true);
+    ;
   const supabaseMs = Date.now() - supabaseStart;
 
   if (error) {
@@ -681,7 +682,20 @@ export async function getLeaderboardData() {
   const rows = Array.isArray(data)
     ? (data as unknown as TrackedPlayer[])
     : [];
-  const enriched = rows.map((player) => {
+  const activeRows = rows.filter((player) => {
+    const value = (player as { is_active?: unknown }).is_active;
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "string") {
+      return value.toLowerCase() === "true" || value.toLowerCase() === "t";
+    }
+    if (typeof value === "number") {
+      return value === 1;
+    }
+    return false;
+  });
+  const enriched = activeRows.map((player) => {
     const ranked =
       player.ranked_tier && player.ranked_rank && player.ranked_lp !== null
         ? {
