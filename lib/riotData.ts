@@ -75,8 +75,16 @@ export async function ensureSummonerId(
   playerId: string,
   puuid: string | null
 ) {
+  const { summonerId } = await ensureSummonerIdWithError(playerId, puuid);
+  return summonerId;
+}
+
+export async function ensureSummonerIdWithError(
+  playerId: string,
+  puuid: string | null
+) {
   if (!puuid) {
-    return null;
+    return { summonerId: null, error: "Missing PUUID." };
   }
 
   const { data: existing, error: existingError } = await supabaseAdmin
@@ -86,17 +94,24 @@ export async function ensureSummonerId(
     .maybeSingle();
 
   if (existingError) {
-    return null;
+    return { summonerId: null, error: "Failed to load player." };
   }
 
   if (existing?.summoner_id) {
-    return existing.summoner_id;
+    return { summonerId: existing.summoner_id, error: null };
+  }
+
+  if (!process.env.RIOT_API_KEY) {
+    return { summonerId: null, error: "Missing RIOT_API_KEY." };
   }
 
   const summoner = await getLolSummonerByPuuid(puuid);
   const summonerId = summoner?.id ?? null;
   if (!summonerId) {
-    return null;
+    return {
+      summonerId: null,
+      error: "Summoner not found or API unavailable."
+    };
   }
 
   const { error: updateError } = await supabaseAdmin
@@ -108,10 +123,10 @@ export async function ensureSummonerId(
     .eq("id", playerId);
 
   if (updateError) {
-    return null;
+    return { summonerId: null, error: "Failed to persist summoner id." };
   }
 
-  return summonerId;
+  return { summonerId, error: null };
 }
 
 export async function listTrackedPlayers() {
@@ -487,9 +502,10 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     };
   }
 
-  const ensuredSummonerId = data.summoner_id
-    ? data.summoner_id
-    : await ensureSummonerId(data.id, data.puuid);
+  const ensureResult = data.summoner_id
+    ? { summonerId: data.summoner_id, error: null }
+    : await ensureSummonerIdWithError(data.id, data.puuid);
+  const ensuredSummonerId = ensureResult.summonerId;
 
   if (ensuredSummonerId && data.summoner_id !== ensuredSummonerId) {
     data = { ...data, summoner_id: ensuredSummonerId };
@@ -505,7 +521,9 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     ranked,
     avgPlacement,
     live,
-    recentMatches
+    recentMatches,
+    debugEnsuredSummonerId: ensuredSummonerId,
+    debugEnsureSummonerIdError: ensureResult.error
   };
 }
 
