@@ -655,33 +655,10 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
 export async function getLeaderboardData() {
   const startedAt = Date.now();
   const supabaseStart = Date.now();
-  const { data, error } = await supabaseAdmin
-    .from("tracked_players")
-    .select(
-      [
-        "id",
-        "riot_id",
-        "slug",
-        "region",
-        "is_active",
-        "avg_placement_10",
-        "live_in_game",
-        "ranked_tier",
-        "ranked_rank",
-        "ranked_lp",
-        "ranked_queue"
-      ].join(",")
-    )
-    ;
+  const data = await listTrackedPlayers();
   const supabaseMs = Date.now() - supabaseStart;
 
-  if (error) {
-    throw error;
-  }
-
-  const rows = Array.isArray(data)
-    ? (data as unknown as TrackedPlayer[])
-    : [];
+  const rows = Array.isArray(data) ? (data as TrackedPlayer[]) : [];
   const activeRows = rows.filter((player) => {
     const value = (player as { is_active?: unknown }).is_active;
     if (typeof value === "boolean") {
