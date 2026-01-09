@@ -4,9 +4,10 @@ import { useState } from "react";
 
 type Props = {
   playerId: string;
+  className?: string;
 };
 
-export function PlayerSyncButton({ playerId }: Props) {
+export function PlayerSyncButton({ playerId, className }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,7 +42,7 @@ export function PlayerSyncButton({ playerId }: Props) {
   };
 
   return (
-    <div className="mt-4 flex flex-col items-center gap-2">
+    <div className={className ?? "mt-4 flex flex-col items-center gap-2"}>
       <button
         type="button"
         onClick={handleClick}

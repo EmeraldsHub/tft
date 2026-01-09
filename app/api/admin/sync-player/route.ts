@@ -17,8 +17,14 @@ export async function POST(request: Request) {
 
   console.log("[riot] RIOT_API_KEY present?", Boolean(process.env.RIOT_API_KEY));
 
-  const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
+  let id: string | null = null;
+  try {
+    const body = (await request.json()) as { id?: string };
+    id = body?.id ?? null;
+  } catch {
+    const { searchParams } = new URL(request.url);
+    id = searchParams.get("id");
+  }
   if (!id) {
     return NextResponse.json({ error: "Missing id." }, { status: 400 });
   }

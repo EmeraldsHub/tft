@@ -142,6 +142,10 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant="neutral">{player.region}</Badge>
                 {liveStatus.inGame ? <Badge variant="green">Live</Badge> : null}
+                <PlayerSyncButton
+                  playerId={player.id}
+                  className="flex items-center gap-2"
+                />
               </div>
             </div>
           </div>
