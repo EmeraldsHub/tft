@@ -638,12 +638,8 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
 }
 
 export async function getLeaderboardData() {
-  const { data } = await supabaseAdmin
-    .from("tracked_players")
-    .select("*")
-    .eq("is_active", true);
-
-  const players = (data ?? []) as TrackedPlayer[];
+  const allPlayers = (await listTrackedPlayers()) as TrackedPlayer[];
+  const players = allPlayers.filter((player) => player.is_active);
 
   const enriched = await Promise.all(
     players.map(async (player) => {
