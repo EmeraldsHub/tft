@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { PlayerSyncButton } from "@/components/PlayerSyncButton";
 import { RankIcon } from "@/components/RankIcon";
+import { MatchHistoryAccordion } from "@/components/MatchHistoryAccordion";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Container } from "@/components/ui/Container";
@@ -60,13 +61,32 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           gameStartTime: number | null;
           participantCount: number | null;
         };
-        recentMatches: Array<{
-          matchId: string;
-          placement: number | null;
-          gameStartTime: number | null;
-          gameDateTime: number | null;
-        }>;
-      })
+            recentMatches: Array<{
+              matchId: string;
+              placement: number | null;
+              gameStartTime: number | null;
+              gameDateTime: number | null;
+              preview?: {
+                placement: number | null;
+                units: Array<{
+                  character_id: string;
+                  tier: number;
+                  itemNames: string[];
+                  champIconUrl: string | null;
+                  itemIconUrls: Array<string | null>;
+                }>;
+                traits: Array<{
+                  name: string;
+                  num_units: number;
+                  style: number;
+                  tier_current: number;
+                  tier_total: number;
+                }>;
+                riotIdGameName?: string | null;
+                riotIdTagline?: string | null;
+              } | null;
+            }>;
+          })
         : {
         player: null,
         ranked: null,
@@ -240,7 +260,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
 
             <Card>
               <CardHeader>
-                <CardTitle>Last 10 matches</CardTitle>
+                <CardTitle>Match history</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {payload.recentMatches.length === 0 ? (
@@ -248,40 +268,17 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                     No match data available yet.
                   </p>
                 ) : (
-                  payload.recentMatches.map((match) => {
-                    const placement = match.placement ?? null;
-                    const shortId = match.matchId.slice(-6);
-                    const timestamp = match.gameStartTime ?? match.gameDateTime;
-                    const timeLabel = timestamp
-                      ? new Date(timestamp).toLocaleString("it-IT", {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })
-                      : "—";
-
-                    return (
-                      <div
-                        key={match.matchId}
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl font-semibold text-white">
-                            {placement ?? "—"}
-                          </span>
-                          <div className="text-xs text-slate-400">
-                            Match {shortId} · {timeLabel}
-                          </div>
-                        </div>
-                        {placement !== null && placement <= 4 ? (
-                          <Badge variant="yellow">Top 4</Badge>
-                        ) : (
-                          <Badge variant="red">Bottom 4</Badge>
-                        )}
-                      </div>
-                    );
-                  })
+                  <MatchHistoryAccordion
+                    matches={payload.recentMatches.map((match) => ({
+                      matchId: match.matchId,
+                      placement: match.placement ?? null,
+                      gameDateTime: match.gameDateTime ?? match.gameStartTime ?? null,
+                      preview: match.preview ?? null
+                    }))}
+                    playerPuuid={player.puuid ?? null}
+                    playerRiotId={player.riot_id}
+                    playerRegion={player.region}
+                  />
                 )}
               </CardContent>
             </Card>

@@ -515,10 +515,12 @@ async function ensureLiveCache(player: TrackedPlayer, force = false) {
   };
 }
 
-function getRankSortKey(player: TrackedPlayer) {
-  const tier = player.ranked_tier ?? "";
-  const rank = player.ranked_rank ?? "";
-  const lp = player.ranked_lp ?? -1;
+function getRankSortKey(
+  player: TrackedPlayer & { ranked?: RankedInfo | null }
+) {
+  const tier = player.ranked?.tier ?? player.ranked_tier ?? "";
+  const rank = player.ranked?.rank ?? player.ranked_rank ?? "";
+  const lp = player.ranked?.leaguePoints ?? player.ranked_lp ?? -1;
   const tierScore = tierOrder[tier] ?? -1;
   const divisionScore = divisionOrder[rank] ?? 0;
   return { tierScore, divisionScore, lp };
