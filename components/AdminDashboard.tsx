@@ -271,6 +271,7 @@ export function AdminDashboard() {
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   {player.profile_image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={player.profile_image_url}
                       alt={player.riot_id}

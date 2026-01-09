@@ -150,6 +150,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           <SectionTitle title="Player Profile" />
           <div className="flex flex-wrap items-center gap-4">
             {profileImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={profileImageUrl}
                 alt={player.riot_id}

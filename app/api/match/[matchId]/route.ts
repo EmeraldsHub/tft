@@ -68,6 +68,9 @@ type PlayerPreview = {
   }>;
 };
 
+const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
+const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
+
 function getPlacement(value: MatchParticipant) {
   const placement = value.placement;
   return typeof placement === "number" ? placement : 999;
@@ -101,7 +104,8 @@ async function buildPlayerPreviews(
         return null;
       }
       const units = await Promise.all(
-        (participant.units ?? []).map(async (unit) => {
+        (Array.isArray(participant.units) ? participant.units : []).map(
+          async (unit) => {
           const characterId = unit.character_id ?? "";
           const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
           const champIconUrl = characterId
@@ -113,9 +117,10 @@ async function buildPlayerPreviews(
               )
             : [];
           const safeItemIconUrls = itemIconUrls.map((url) =>
-            sanitizeIconUrl(url)
+            sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
           );
-          const safeChampIconUrl = sanitizeIconUrl(champIconUrl);
+          const safeChampIconUrl =
+            sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON;
           return {
             character_id: characterId,
             tier: typeof unit.tier === "number" ? unit.tier : 0,
@@ -146,9 +151,21 @@ async function buildPlayerPreviews(
     })
   );
 
-  return Object.fromEntries(
-    entries.filter((entry): entry is [string, PlayerPreview] => Boolean(entry))
-  );
+  type PreviewEntry = readonly [string, PlayerPreview];
+  const validEntries: PreviewEntry[] = [];
+  for (const entry of entries as unknown[]) {
+    if (
+      Array.isArray(entry) &&
+      entry.length >= 2 &&
+      typeof entry[0] === "string" &&
+      entry[1] != null
+    ) {
+      const key = entry[0];
+      const value = entry[1] as PlayerPreview;
+      validEntries.push([key, value] as const);
+    }
+  }
+  return Object.fromEntries(validEntries);
 }
 
 async function enrichParticipants(
@@ -157,7 +174,8 @@ async function enrichParticipants(
   return Promise.all(
     participants.map(async (participant) => {
       const units = await Promise.all(
-        (participant.units ?? []).map(async (unit) => {
+        (Array.isArray(participant.units) ? participant.units : []).map(
+          async (unit) => {
           const characterId = unit.character_id ?? "";
           const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
           const champIconUrl = characterId
@@ -169,9 +187,10 @@ async function enrichParticipants(
               )
             : [];
           const safeItemIconUrls = itemIconUrls.map((url) =>
-            sanitizeIconUrl(url)
+            sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
           );
-          const safeChampIconUrl = sanitizeIconUrl(champIconUrl);
+          const safeChampIconUrl =
+            sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON;
           return {
             ...unit,
             character_id: characterId,

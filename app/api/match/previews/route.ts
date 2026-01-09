@@ -64,71 +64,236 @@ type PlayerPreview = {
     tier_current: number;
     tier_total: number;
   }>;
+  reason?: "PLAYER_NOT_FOUND" | "no_puuid_match_fallback_top1" | "no_units_in_match";
 };
 
 type MatchPreviewResponse = {
-  previews: Record<string, PlayerPreview | null>;
+  previews: Record<string, PlayerPreview>;
   error?: string;
 };
+
+const isDev = process.env.NODE_ENV !== "production";
+const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
+const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
+
+function devWarn(message: string, details?: Record<string, unknown>) {
+  if (!isDev) {
+    return;
+  }
+  if (details) {
+    console.warn(message, details);
+    return;
+  }
+  console.warn(message);
+}
+
+function normalizePuuid(value: string | null | undefined) {
+  return value ? value.trim().toLowerCase() : "";
+}
+
+function mapShardToRoutingRegion(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toUpperCase();
+  if (["EUW1", "EUN1", "RU", "TR1"].includes(normalized)) {
+    return "EUROPE";
+  }
+  if (["NA1", "BR1", "LA1", "LA2", "OC1"].includes(normalized)) {
+    return "AMERICAS";
+  }
+  if (["KR", "JP1"].includes(normalized)) {
+    return "ASIA";
+  }
+  if (["EUROPE", "AMERICAS", "ASIA"].includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function withReason(preview: PlayerPreview, reason: PlayerPreview["reason"]) {
+  if (!isDev || !reason) {
+    return preview;
+  }
+  return { ...preview, reason };
+}
+
+function buildMissingPreview(puuid: string): PlayerPreview {
+  return withReason(
+    {
+      puuid,
+      riotIdGameName: null,
+      riotIdTagline: null,
+      placement: null,
+      units: [],
+      traits: []
+    },
+    "PLAYER_NOT_FOUND"
+  );
+}
+
+async function buildPreviewFromParticipant(
+  participant: MatchParticipant,
+  puuidOverride?: string | null,
+  reason?: PlayerPreview["reason"]
+): Promise<PlayerPreview | null> {
+  const puuid = normalizePuuid(puuidOverride ?? participant.puuid ?? null);
+  if (!puuid) {
+    return null;
+  }
+  const unitsSource = Array.isArray(participant.units)
+    ? participant.units
+    : [];
+  const units = await Promise.all(
+    unitsSource.map(async (unit) => {
+      const characterId = unit.character_id ?? "";
+      const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
+      const champIconRaw = characterId
+        ? await getChampionIconUrl(characterId)
+        : null;
+      if (!champIconRaw && isDev && characterId) {
+        console.warn("[icons] missing champ icon", characterId);
+      }
+      const itemIconUrls = itemNames.length
+        ? await Promise.all(
+          itemNames.map(async (itemName) => {
+            const url = await getItemIconUrl(itemName);
+            if (!url && isDev) {
+              console.warn("[icons] missing item icon", itemName);
+            }
+            return url;
+          })
+        )
+        : [];
+      const safeItemIconUrls = itemIconUrls.map((url) => {
+        const sanitized = sanitizeIconUrl(url);
+        return sanitized ?? UNKNOWN_ITEM_ICON;
+      });
+      const safeChampIconUrl =
+        sanitizeIconUrl(champIconRaw) ?? UNKNOWN_UNIT_ICON;
+      return {
+        character_id: characterId,
+        tier: typeof unit.tier === "number" ? unit.tier : 0,
+        itemNames,
+        champIconUrl: safeChampIconUrl,
+        itemIconUrls: safeItemIconUrls
+      };
+    })
+  );
+  const traitsSource = Array.isArray(participant.traits)
+    ? participant.traits
+    : [];
+  const traits = traitsSource.map((trait) => ({
+    name: trait.name ?? "",
+    num_units: trait.num_units ?? 0,
+    style: trait.style ?? 0,
+    tier_current: trait.tier_current ?? 0,
+    tier_total: trait.tier_total ?? 0
+  }));
+  return withReason(
+    {
+      puuid,
+      riotIdGameName: participant.riotIdGameName ?? null,
+      riotIdTagline: participant.riotIdTagline ?? null,
+      placement: participant.placement ?? null,
+      units,
+      traits
+    },
+    reason ?? (unitsSource.length === 0 ? "no_units_in_match" : undefined)
+  );
+}
+
+function selectFallbackParticipant(
+  participants: MatchParticipant[]
+): MatchParticipant | null {
+  if (participants.length === 0) {
+    return null;
+  }
+  const withPlacement = participants.filter(
+    (participant) => typeof participant.placement === "number"
+  );
+  if (withPlacement.length === 0) {
+    return participants[0];
+  }
+  return withPlacement.reduce((best, current) => {
+    if (best.placement == null) {
+      return current;
+    }
+    if (current.placement == null) {
+      return best;
+    }
+    return current.placement < best.placement ? current : best;
+  });
+}
+
+function selectParticipantForPuuid(
+  participants: MatchParticipant[],
+  puuid: string
+): MatchParticipant | null {
+  const normalized = normalizePuuid(puuid);
+  if (!normalized) {
+    return null;
+  }
+  return (
+    participants.find(
+      (participant) => normalizePuuid(participant.puuid) === normalized
+    ) ?? null
+  );
+}
+
+function getUnitsCount(participant: MatchParticipant | null) {
+  if (!participant) {
+    return null;
+  }
+  const units = participant.units;
+  return Array.isArray(units) ? units.length : null;
+}
+
+function getParticipantsCount(participants: MatchParticipant[] | undefined) {
+  return Array.isArray(participants) ? participants.length : 0;
+}
+
+function findPreviewForPuuid(
+  previews: Record<string, PlayerPreview>,
+  puuid: string
+) {
+  const normalized = normalizePuuid(puuid);
+  if (!normalized) {
+    return null;
+  }
+  return (
+    previews[puuid] ??
+    Object.entries(previews).find(
+      ([key]) => normalizePuuid(key) === normalized
+    )?.[1] ??
+    null
+  );
+}
+
+type PreviewEntry = readonly [string, PlayerPreview];
+
+function isPreviewEntry(entry: PreviewEntry | null): entry is PreviewEntry {
+  return entry !== null;
+}
 
 async function buildPlayerPreviews(
   participants: MatchParticipant[]
 ): Promise<Record<string, PlayerPreview>> {
   const entries = await Promise.all(
     participants.map(async (participant) => {
-      const puuid = participant.puuid ?? null;
-      if (!puuid) {
+      const preview = await buildPreviewFromParticipant(participant);
+      if (!preview) {
         return null;
       }
-      const units = await Promise.all(
-        (participant.units ?? []).map(async (unit) => {
-          const characterId = unit.character_id ?? "";
-          const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
-          const champIconUrl = characterId
-            ? await getChampionIconUrl(characterId)
-            : null;
-          const itemIconUrls = itemNames.length
-            ? await Promise.all(
-                itemNames.map((itemName) => getItemIconUrl(itemName))
-              )
-            : [];
-          const safeItemIconUrls = itemIconUrls.map((url) =>
-            sanitizeIconUrl(url)
-          );
-          const safeChampIconUrl = sanitizeIconUrl(champIconUrl);
-          return {
-            character_id: characterId,
-            tier: typeof unit.tier === "number" ? unit.tier : 0,
-            itemNames,
-            champIconUrl: safeChampIconUrl,
-            itemIconUrls: safeItemIconUrls
-          };
-        })
-      );
-      const traits = (participant.traits ?? []).map((trait) => ({
-        name: trait.name ?? "",
-        num_units: trait.num_units ?? 0,
-        style: trait.style ?? 0,
-        tier_current: trait.tier_current ?? 0,
-        tier_total: trait.tier_total ?? 0
-      }));
-      return [
-        puuid,
-        {
-          puuid,
-          riotIdGameName: participant.riotIdGameName ?? null,
-          riotIdTagline: participant.riotIdTagline ?? null,
-          placement: participant.placement ?? null,
-          units,
-          traits
-        }
-      ] as const;
+      return [preview.puuid, preview] as const;
     })
   );
 
-  return Object.fromEntries(
-    entries.filter((entry): entry is [string, PlayerPreview] => Boolean(entry))
-  );
+  const result: Record<string, PlayerPreview> = {};
+  entries.filter(isPreviewEntry).forEach(([key, value]) => {
+    result[key] = value;
+  });
+  return result;
 }
 
 async function fetchRiotMatch(
@@ -167,18 +332,30 @@ async function fetchRiotMatch(
 async function fetchPreviewForMatch(
   matchId: string,
   puuid: string,
-  apiKey: string | null
-): Promise<PlayerPreview | null> {
+  apiKey: string | null,
+  regionNormalized: string,
+  regionReceived: string | null
+): Promise<PlayerPreview> {
   if (!apiKey) {
-    return null;
+    return buildMissingPreview(puuid);
   }
 
   const payload = await fetchRiotMatch(matchId, apiKey);
   if (!payload) {
-    return null;
+    return buildMissingPreview(puuid);
   }
 
   const participants = payload.info?.participants ?? [];
+  const participant = selectParticipantForPuuid(participants, puuid);
+  devWarn("[api/match/previews] riot match", {
+    matchId,
+    regionReceived,
+    regionNormalized,
+    puuidReceived: puuid,
+    participantsCount: getParticipantsCount(participants),
+    participantFound: Boolean(participant),
+    participantUnitsCount: getUnitsCount(participant)
+  });
   const playerPreviews = await buildPlayerPreviews(participants);
   const gameMs =
     typeof payload.info?.game_datetime === "number"
@@ -194,7 +371,7 @@ async function fetchPreviewForMatch(
     .upsert(
       {
         match_id: matchId,
-        region: "EUROPE",
+        region: regionNormalized,
         game_datetime: gameDatetimeISO,
         queue_id: queueId,
         data: payload,
@@ -208,7 +385,32 @@ async function fetchPreviewForMatch(
     console.warn("[tft_match_cache] upsert failed", error.message);
   }
 
-  return playerPreviews[puuid] ?? null;
+  const preview =
+    findPreviewForPuuid(playerPreviews, puuid) ??
+    (participant
+      ? await buildPreviewFromParticipant(
+          participant,
+          puuid,
+          "no_puuid_match_fallback_top1"
+        )
+      : null);
+  if (preview) {
+    return preview;
+  }
+  if (participants.length > 0) {
+    const fallback = selectFallbackParticipant(participants);
+    const fallbackPreview = fallback
+      ? await buildPreviewFromParticipant(
+          fallback,
+          puuid,
+          "no_puuid_match_fallback_top1"
+        )
+      : null;
+    if (fallbackPreview) {
+      return fallbackPreview;
+    }
+  }
+  return buildMissingPreview(puuid);
 }
 
 async function hydratePreviewIcons(
@@ -219,27 +421,35 @@ async function hydratePreviewIcons(
   const units = await Promise.all(
     unitList.map(async (unit) => {
       const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
-      let itemIconUrls = Array.isArray(unit.itemIconUrls)
-        ? unit.itemIconUrls
+      const resolvedItemIconUrls = itemNames.length
+        ? await Promise.all(
+            itemNames.map(async (itemName) => {
+              const url = await getItemIconUrl(itemName);
+              if (!url && isDev) {
+                console.warn("[icons] missing item icon", itemName);
+              }
+              return url;
+            })
+          )
         : [];
-      itemIconUrls = itemIconUrls.map((url) => sanitizeIconUrl(url));
-      if (
-        itemIconUrls.length !== itemNames.length ||
-        itemIconUrls.some((url) => url === null)
-      ) {
-        itemIconUrls = await Promise.all(
-          itemNames.map((itemName) => getItemIconUrl(itemName))
-        );
-        itemIconUrls = itemIconUrls.map((url) => sanitizeIconUrl(url));
-        changed = true;
-      }
+      const itemIconUrls = resolvedItemIconUrls.map((url) => {
+        const sanitized = sanitizeIconUrl(url);
+        return sanitized ?? UNKNOWN_ITEM_ICON;
+      });
 
-      let champIconUrl = sanitizeIconUrl(unit.champIconUrl);
-      if (champIconUrl === null) {
-        champIconUrl = unit.character_id
-          ? await getChampionIconUrl(unit.character_id)
-          : null;
-        champIconUrl = sanitizeIconUrl(champIconUrl);
+      const champIconRaw = unit.character_id
+        ? await getChampionIconUrl(unit.character_id)
+        : null;
+      if (!champIconRaw && isDev && unit.character_id) {
+        console.warn("[icons] missing champ icon", unit.character_id);
+      }
+      const champIconUrl =
+        sanitizeIconUrl(champIconRaw) ?? UNKNOWN_UNIT_ICON;
+
+      if (
+        champIconUrl !== unit.champIconUrl ||
+        JSON.stringify(itemIconUrls) !== JSON.stringify(unit.itemIconUrls ?? [])
+      ) {
         changed = true;
       }
 
@@ -297,7 +507,7 @@ function parseRequestBody(body: unknown): {
 
   const puuid =
     typeof puuidValue === "string" && puuidValue.trim().length > 0
-      ? puuidValue.trim()
+      ? puuidValue.trim().toLowerCase()
       : null;
   const region =
     typeof regionValue === "string" && regionValue.trim().length > 0
@@ -339,8 +549,9 @@ export async function POST(request: Request) {
       });
     }
 
-    const { matchIds, puuid } = parseRequestBody(body);
-    const previews: Record<string, PlayerPreview | null> = {};
+    const { matchIds, puuid, region } = parseRequestBody(body);
+    const regionNormalized = mapShardToRoutingRegion(region) ?? "EUROPE";
+    const previews: Record<string, PlayerPreview> = {};
 
     if (!puuid || matchIds.length === 0) {
       if (process.env.NODE_ENV !== "production") {
@@ -373,8 +584,15 @@ export async function POST(request: Request) {
     for (const matchId of matchIds) {
       const cachedPreviews = previewMap.get(matchId) ?? null;
       const cachedPreview = cachedPreviews
-        ? cachedPreviews[puuid] ?? null
+        ? findPreviewForPuuid(cachedPreviews, puuid)
         : null;
+      devWarn("[api/match/previews] cache lookup", {
+        matchId,
+        regionReceived: region ?? null,
+        regionNormalized,
+        puuidReceived: puuid,
+        cacheHit: Boolean(cachedPreview)
+      });
       if (cachedPreview) {
         const { preview, changed } = await hydratePreviewIcons(cachedPreview);
         previews[matchId] = preview;
@@ -399,27 +617,33 @@ export async function POST(request: Request) {
     if (missingMatchIds.length > 0) {
       if (!apiKey) {
         missingMatchIds.forEach((matchId) => {
-          previews[matchId] = null;
+          previews[matchId] = buildMissingPreview(puuid);
         });
       } else {
         const fetched = await runWithLimit(
           missingMatchIds,
           2,
           async (matchId) => {
-            const preview = await fetchPreviewForMatch(matchId, puuid, apiKey);
+            const preview = await fetchPreviewForMatch(
+              matchId,
+              puuid,
+              apiKey,
+              regionNormalized,
+              region ?? null
+            );
             return { matchId, preview };
           }
         );
 
         fetched.forEach(({ matchId, preview }) => {
-          previews[matchId] = preview ?? null;
+          previews[matchId] = preview ?? buildMissingPreview(puuid);
         });
       }
     }
 
     matchIds.forEach((matchId) => {
       if (!Object.prototype.hasOwnProperty.call(previews, matchId)) {
-        previews[matchId] = null;
+        previews[matchId] = buildMissingPreview(puuid);
       }
     });
 

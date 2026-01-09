@@ -30,6 +30,9 @@ type PlayerPreview = {
   riotIdTagline?: string | null;
 };
 
+const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
+const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
+
 async function hydratePreviewIcons(
   preview: PlayerPreview
 ): Promise<PlayerPreview> {
@@ -37,29 +40,18 @@ async function hydratePreviewIcons(
   const units = await Promise.all(
     unitList.map(async (unit) => {
       const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
-      const itemIconUrls = Array.isArray(unit.itemIconUrls)
-        ? unit.itemIconUrls
+      const resolvedItemIconUrls = itemNames.length
+        ? await Promise.all(itemNames.map((itemName) => getItemIconUrl(itemName)))
         : [];
-      const sanitizedItemIconUrls = itemIconUrls.map((url) =>
-        sanitizeIconUrl(url)
-      );
-      const resolvedItemIconUrls =
-        sanitizedItemIconUrls.length === itemNames.length &&
-        sanitizedItemIconUrls.every((url) => url !== null)
-          ? sanitizedItemIconUrls
-          : await Promise.all(
-              itemNames.map((itemName) => getItemIconUrl(itemName))
-            );
-      const champIconUrl =
-        typeof unit.champIconUrl !== "undefined"
-          ? sanitizeIconUrl(unit.champIconUrl)
-          : unit.character_id
-            ? await getChampionIconUrl(unit.character_id)
-            : null;
+      const champIconUrl = unit.character_id
+        ? await getChampionIconUrl(unit.character_id)
+        : null;
       return {
         ...unit,
-        itemIconUrls: resolvedItemIconUrls.map((url) => sanitizeIconUrl(url)),
-        champIconUrl: sanitizeIconUrl(champIconUrl)
+        itemIconUrls: resolvedItemIconUrls.map(
+          (url) => sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
+        ),
+        champIconUrl: sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON
       };
     })
   );

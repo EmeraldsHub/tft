@@ -266,7 +266,7 @@ export function MatchHistoryAccordion({
       isActive = false;
       controller.abort();
     };
-  }, [playerPuuid, previewMap, sortedMatches]);
+  }, [playerPuuid, previewMap, sortedMatches, playerRegion]);
 
   const handleToggle = async (matchId: string) => {
     if (expandedMatchId === matchId) {

@@ -9,7 +9,7 @@ import {
   getMatchIdsByPuuid,
   parseRiotId
 } from "@/lib/riot";
-import type { TftLeagueEntry } from "@/lib/riot";
+import type { RiotMatch, TftLeagueEntry } from "@/lib/riot";
 import { slugifyRiotId } from "@/lib/slugify";
 
 type TrackedPlayer = {
@@ -432,6 +432,18 @@ async function ensureRankedCache(
 
   const entries = await getLeagueEntriesByPuuid(player.puuid);
   if (!entries) {
+    if (player.ranked_tier && player.ranked_rank && player.ranked_lp !== null) {
+      return {
+        ranked: {
+          tier: player.ranked_tier,
+          rank: player.ranked_rank,
+          leaguePoints: player.ranked_lp
+        },
+        rankIconUrl: getRankIconUrl(player.ranked_tier),
+        rankedQueue: player.ranked_queue ?? null,
+        status: "cached"
+      };
+    }
     return {
       ranked: null,
       rankIconUrl: null,
@@ -771,7 +783,8 @@ export async function getRecentMatches(
 
   const matchIds = (await getMatchIdsByPuuid(puuid, count)) ?? [];
   if (matchIds.length === 0) {
-    return [];
+    const fallback = await getRecentMatchesFromCache(puuid, count);
+    return fallback;
   }
 
   const matches = await Promise.all(
@@ -791,6 +804,48 @@ export async function getRecentMatches(
       placement,
       gameStartTime: info?.game_start_time ?? null,
       gameDateTime: info?.game_datetime ?? null
+    };
+  });
+}
+
+type CachedPreview = {
+  placement?: number | null;
+};
+
+type CachedMatchRow = {
+  match_id: string;
+  game_datetime: string | null;
+  data: RiotMatch | null;
+  player_previews: Record<string, CachedPreview> | null;
+};
+
+async function getRecentMatchesFromCache(
+  puuid: string,
+  count: number
+): Promise<MatchSummary[]> {
+  const { data, error } = await supabaseAdmin
+    .from("tft_match_cache")
+    .select("match_id, game_datetime, data, player_previews")
+    .contains("player_previews", { [puuid]: {} })
+    .order("game_datetime", { ascending: false })
+    .limit(count);
+
+  if (error || !Array.isArray(data)) {
+    return [];
+  }
+
+  return (data as CachedMatchRow[]).map((row) => {
+    const preview = row.player_previews?.[puuid] ?? null;
+    const placement =
+      typeof preview?.placement === "number" ? preview.placement : null;
+    const info = row.data?.info;
+    return {
+      matchId: row.match_id,
+      placement,
+      gameStartTime: info?.game_start_time ?? null,
+      gameDateTime: row.game_datetime
+        ? new Date(row.game_datetime).getTime()
+        : info?.game_datetime ?? null
     };
   });
 }
