@@ -666,7 +666,9 @@ export async function getLeaderboardData() {
     throw error;
   }
 
-  const rows = (data ?? []) as Array<TrackedPlayer>;
+  const rows = Array.isArray(data)
+    ? (data as unknown as TrackedPlayer[])
+    : [];
   const enriched = rows.map((player) => {
     const ranked =
       player.ranked_tier && player.ranked_rank && player.ranked_lp !== null
