@@ -37,12 +37,19 @@ type MatchDetailResponse = {
 
 type PlayerPreview = {
   placement: number | null;
+  level?: number | null;
   units: Array<{
     character_id: string;
     tier: number;
     itemNames: string[];
     champIconUrl: string | null;
     itemIconUrls: Array<string | null>;
+  }>;
+  topTraits?: Array<{
+    name: string;
+    num_units: number;
+    style: number;
+    iconUrl: string | null;
   }>;
   traits: Array<{
     name: string;
@@ -106,26 +113,28 @@ function UnitTile({ unit }: { unit: MatchParticipantUnit }) {
     : [];
   const tier = unit.tier ?? 0;
   const champIconUrl = unit.champIconUrl ?? null;
+  const champSize = 48;
+  const itemSize = 16;
 
   if (!characterId || !champIconUrl) {
     return null;
   }
 
   return (
-    <div className="relative h-8 w-8">
+    <div className="relative" style={{ width: champSize, height: champSize }}>
       <TftIcon
         src={champIconUrl}
         alt={characterId}
-        width={32}
-        height={32}
+        width={champSize}
+        height={champSize}
         className="rounded border border-slate-800 bg-slate-900"
       />
       {tier > 1 ? (
-        <span className="absolute -bottom-1 -right-1 rounded-full bg-slate-900 px-1 text-[10px] text-yellow-300">
+        <span className="absolute -bottom-1 -right-1 rounded-full bg-slate-900 px-1 text-[11px] text-yellow-300">
           {tier}
         </span>
       ) : null}
-      <div className="absolute -top-1 left-0 flex gap-0.5">
+      <div className="absolute -top-2 left-0 right-0 flex justify-center gap-0.5">
         {itemIconUrls.slice(0, 3).map((itemUrl, index) => {
           if (!itemUrl) {
             return null;
@@ -136,8 +145,8 @@ function UnitTile({ unit }: { unit: MatchParticipantUnit }) {
               key={`${itemUrl}-${index}`}
               src={itemUrl}
               alt={itemName}
-              width={14}
-              height={14}
+              width={itemSize}
+              height={itemSize}
               className="rounded border border-slate-800 bg-slate-950"
             />
           );
@@ -208,12 +217,22 @@ export function MatchHistoryAccordion({
       return;
     }
 
+    const needsPreviewRefresh = (preview: PlayerPreview | null | undefined) => {
+      if (!preview) {
+        return true;
+      }
+      const hasLevel = typeof preview.level === "number";
+      const hasTopTraits =
+        Array.isArray(preview.topTraits) && preview.topTraits.length > 0;
+      return !hasLevel || !hasTopTraits;
+    };
+
     const missingMatchIds = sortedMatches
-      .filter(
-        (match) =>
-          !match.preview &&
-          !Object.prototype.hasOwnProperty.call(previewMap, match.matchId)
-      )
+      .filter((match) => {
+        const currentPreview =
+          previewMap[match.matchId] ?? match.preview ?? null;
+        return needsPreviewRefresh(currentPreview);
+      })
       .map((match) => match.matchId);
 
     if (missingMatchIds.length === 0) {
@@ -330,6 +349,11 @@ export function MatchHistoryAccordion({
           ? previewMap[match.matchId] ?? null
           : match.preview ?? null;
         const previewUnits = Array.isArray(preview?.units) ? preview.units : [];
+        const previewLevel =
+          typeof preview?.level === "number" ? preview.level : null;
+        const topTraits = Array.isArray(preview?.topTraits)
+          ? preview.topTraits.filter((trait) => Boolean(trait.iconUrl))
+          : [];
         const units = previewUnits.length > 0
           ? previewUnits
           : currentParticipant?.units ?? [];
@@ -358,6 +382,28 @@ export function MatchHistoryAccordion({
                 <span className="text-xs text-slate-400">
                   {isMounted ? formatMatchTime(matchTime) : "—"}
                 </span>
+                <div className="flex items-center gap-2">
+                  {previewLevel ? (
+                    <span className="rounded-full border border-slate-800 px-2 py-0.5 text-xs text-slate-200">
+                      Lv {previewLevel}
+                    </span>
+                  ) : null}
+                  {topTraits.length > 0 ? (
+                    <div className="flex items-center gap-1">
+                      {topTraits.map((trait, index) => (
+                        <TftIcon
+                          key={`${trait.name}-${index}`}
+                          src={trait.iconUrl ?? ""}
+                          alt={trait.name}
+                          width={20}
+                          height={20}
+                          title={trait.name}
+                          className="rounded border border-slate-800 bg-slate-950"
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div className="flex flex-1 items-center justify-end gap-2">
                 {renderableUnits.length > 0 ? (
@@ -378,7 +424,11 @@ export function MatchHistoryAccordion({
                     {detail.participants.map((participant, index) => (
                       <div
                         key={`${detail.matchId}-${index}`}
-                        className="flex flex-wrap items-center gap-3 rounded-md border border-slate-800 bg-slate-950 px-3 py-2"
+                        className={`flex flex-wrap items-center gap-3 rounded-md border border-slate-800 px-3 py-2 ${
+                          participant.puuid === playerPuuid
+                            ? "bg-white/5 text-slate-100 ring-1 ring-cyan-400/40"
+                            : "bg-slate-950"
+                        }`}
                       >
                         <span className="w-8 text-sm font-semibold text-white">
                           #{participant.placement ?? "—"}

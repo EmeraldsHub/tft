@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getChampionIconUrl,
   getItemIconUrl,
+  getTftTraitIconUrl,
   sanitizeIconUrl
 } from "@/lib/cdragonStatic";
 
@@ -30,6 +31,7 @@ type MatchParticipant = {
   puuid?: string | null;
   riotIdGameName?: string | null;
   riotIdTagline?: string | null;
+  level?: number | null;
   units?: MatchParticipantUnit[] | null;
   traits?: MatchParticipantTrait[] | null;
 };
@@ -50,6 +52,7 @@ type PlayerPreview = {
   riotIdGameName: string | null;
   riotIdTagline: string | null;
   placement: number | null;
+  level: number | null;
   units: Array<{
     character_id: string;
     tier: number;
@@ -64,6 +67,12 @@ type PlayerPreview = {
     tier_current: number;
     tier_total: number;
   }>;
+  topTraits: Array<{
+    name: string;
+    num_units: number;
+    style: number;
+    iconUrl: string | null;
+  }>;
   reason?: "PLAYER_NOT_FOUND" | "no_puuid_match_fallback_top1" | "no_units_in_match";
 };
 
@@ -74,7 +83,6 @@ type MatchPreviewResponse = {
 
 const isDev = process.env.NODE_ENV !== "production";
 const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
-const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
 
 function devWarn(message: string, details?: Record<string, unknown>) {
   if (!isDev) {
@@ -125,8 +133,10 @@ function buildMissingPreview(puuid: string): PlayerPreview {
       riotIdGameName: null,
       riotIdTagline: null,
       placement: null,
+      level: null,
       units: [],
-      traits: []
+      traits: [],
+      topTraits: []
     },
     "PLAYER_NOT_FOUND"
   );
@@ -165,10 +175,9 @@ async function buildPreviewFromParticipant(
           })
         )
         : [];
-      const safeItemIconUrls = itemIconUrls.map((url) => {
-        const sanitized = sanitizeIconUrl(url);
-        return sanitized ?? UNKNOWN_ITEM_ICON;
-      });
+      const safeItemIconUrls = itemIconUrls.map((url) =>
+        sanitizeIconUrl(url)
+      );
       const safeChampIconUrl =
         sanitizeIconUrl(champIconRaw) ?? UNKNOWN_UNIT_ICON;
       return {
@@ -190,14 +199,44 @@ async function buildPreviewFromParticipant(
     tier_current: trait.tier_current ?? 0,
     tier_total: trait.tier_total ?? 0
   }));
+  const topTraitsSource = traitsSource
+    .filter(
+      (trait) =>
+        (trait.style ?? 0) > 0 || (trait.tier_current ?? 0) > 0
+    )
+    .sort((a, b) => {
+      const styleDiff = (b.style ?? 0) - (a.style ?? 0);
+      if (styleDiff !== 0) {
+        return styleDiff;
+      }
+      return (b.num_units ?? 0) - (a.num_units ?? 0);
+    })
+    .slice(0, 5);
+  const topTraits = await Promise.all(
+    topTraitsSource.map(async (trait) => {
+      const name = trait.name ?? "";
+      const iconUrl = name ? await getTftTraitIconUrl(name) : null;
+      if (!iconUrl && isDev && name) {
+        console.warn("[traits] missing icon", name);
+      }
+      return {
+        name,
+        num_units: trait.num_units ?? 0,
+        style: trait.style ?? 0,
+        iconUrl
+      };
+    })
+  );
   return withReason(
     {
       puuid,
       riotIdGameName: participant.riotIdGameName ?? null,
       riotIdTagline: participant.riotIdTagline ?? null,
       placement: participant.placement ?? null,
+      level: typeof participant.level === "number" ? participant.level : null,
       units,
-      traits
+      traits,
+      topTraits
     },
     reason ?? (unitsSource.length === 0 ? "no_units_in_match" : undefined)
   );
@@ -418,6 +457,10 @@ async function hydratePreviewIcons(
 ): Promise<{ preview: PlayerPreview; changed: boolean }> {
   let changed = false;
   const unitList = Array.isArray(preview.units) ? preview.units : [];
+  const topTraitsList = Array.isArray(preview.topTraits)
+    ? preview.topTraits
+    : [];
+  const traitsSource = Array.isArray(preview.traits) ? preview.traits : [];
   const units = await Promise.all(
     unitList.map(async (unit) => {
       const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
@@ -432,10 +475,9 @@ async function hydratePreviewIcons(
             })
           )
         : [];
-      const itemIconUrls = resolvedItemIconUrls.map((url) => {
-        const sanitized = sanitizeIconUrl(url);
-        return sanitized ?? UNKNOWN_ITEM_ICON;
-      });
+      const itemIconUrls = resolvedItemIconUrls.map((url) =>
+        sanitizeIconUrl(url)
+      );
 
       const champIconRaw = unit.character_id
         ? await getChampionIconUrl(unit.character_id)
@@ -460,9 +502,47 @@ async function hydratePreviewIcons(
       };
     })
   );
+  const topTraitsSource =
+    topTraitsList.length > 0
+      ? topTraitsList
+      : traitsSource
+          .filter(
+            (trait) =>
+              (trait.style ?? 0) > 0 || (trait.tier_current ?? 0) > 0
+          )
+          .sort((a, b) => {
+            const styleDiff = (b.style ?? 0) - (a.style ?? 0);
+            if (styleDiff !== 0) {
+              return styleDiff;
+            }
+            return (b.num_units ?? 0) - (a.num_units ?? 0);
+          })
+          .slice(0, 5)
+          .map((trait) => ({
+            name: trait.name ?? "",
+            num_units: trait.num_units ?? 0,
+            style: trait.style ?? 0,
+            iconUrl: null
+          }));
+  const topTraits = await Promise.all(
+    topTraitsSource.map(async (trait) => {
+      const name = trait.name ?? "";
+      const sanitized = sanitizeIconUrl(trait.iconUrl ?? null);
+      const iconUrl =
+        sanitized ??
+        (name ? await getTftTraitIconUrl(name) : null);
+      if (iconUrl !== trait.iconUrl) {
+        changed = true;
+      }
+      return {
+        ...trait,
+        iconUrl
+      };
+    })
+  );
 
   return {
-    preview: { ...preview, units },
+    preview: { ...preview, units, topTraits },
     changed
   };
 }
@@ -568,49 +648,75 @@ export async function POST(request: Request) {
 
     const { data: cacheRows } = await supabaseAdmin
       .from("tft_match_cache")
-      .select("match_id, player_previews")
+      .select("match_id, player_previews, data")
       .in("match_id", matchIds);
 
     const previewMap = new Map<string, Record<string, PlayerPreview> | null>();
+    const cacheDataMap = new Map<string, MatchPayload | null>();
     (cacheRows ?? []).forEach((row) => {
       previewMap.set(
         row.match_id,
         (row.player_previews as Record<string, PlayerPreview> | null) ?? null
       );
+      cacheDataMap.set(row.match_id, (row.data as MatchPayload | null) ?? null);
     });
 
     const missingMatchIds: string[] = [];
+    const fallbackPreviewMap = new Map<string, PlayerPreview>();
+    let cacheHits = 0;
+    let cacheMisses = 0;
 
     for (const matchId of matchIds) {
       const cachedPreviews = previewMap.get(matchId) ?? null;
       const cachedPreview = cachedPreviews
         ? findPreviewForPuuid(cachedPreviews, puuid)
         : null;
-      devWarn("[api/match/previews] cache lookup", {
-        matchId,
-        regionReceived: region ?? null,
-        regionNormalized,
-        puuidReceived: puuid,
-        cacheHit: Boolean(cachedPreview)
-      });
       if (cachedPreview) {
-        const { preview, changed } = await hydratePreviewIcons(cachedPreview);
-        previews[matchId] = preview;
-        if (changed && cachedPreviews) {
+        cacheHits += 1;
+        let preview = cachedPreview;
+        const hasTopTraits =
+          Array.isArray(preview.topTraits) && preview.topTraits.length > 0;
+        const hasLevel = typeof preview.level === "number";
+        if (!hasTopTraits || !hasLevel) {
+          const payload = cacheDataMap.get(matchId) ?? null;
+          const participants = payload?.info?.participants ?? [];
+          const participant = selectParticipantForPuuid(participants, puuid);
+          const rebuilt = participant
+            ? await buildPreviewFromParticipant(participant, puuid)
+            : null;
+          if (rebuilt) {
+            preview = rebuilt;
+          } else {
+            missingMatchIds.push(matchId);
+            fallbackPreviewMap.set(matchId, preview);
+            continue;
+          }
+        }
+        const { preview: hydrated, changed } = await hydratePreviewIcons(preview);
+        previews[matchId] = hydrated;
+        if ((changed || preview !== cachedPreview) && cachedPreviews) {
           await supabaseAdmin
             .from("tft_match_cache")
             .update({
               player_previews: {
                 ...cachedPreviews,
-                [puuid]: preview
+                [puuid]: hydrated
               }
             })
             .eq("match_id", matchId);
         }
       } else {
+        cacheMisses += 1;
         missingMatchIds.push(matchId);
       }
     }
+    devWarn("[api/match/previews] cache summary", {
+      regionReceived: region ?? null,
+      regionNormalized,
+      puuidReceived: puuid,
+      cacheHits,
+      cacheMisses
+    });
 
     const apiKey = process.env.RIOT_API_KEY ?? null;
 
@@ -636,7 +742,10 @@ export async function POST(request: Request) {
         );
 
         fetched.forEach(({ matchId, preview }) => {
-          previews[matchId] = preview ?? buildMissingPreview(puuid);
+          const fallback = fallbackPreviewMap.get(matchId) ?? null;
+          const resolved =
+            preview && preview.units.length > 0 ? preview : fallback;
+          previews[matchId] = resolved ?? buildMissingPreview(puuid);
         });
       }
     }

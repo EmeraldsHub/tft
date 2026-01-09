@@ -6,12 +6,14 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getChampionIconUrl,
   getItemIconUrl,
+  getTftTraitIconUrl,
   sanitizeIconUrl
 } from "@/lib/cdragonStatic";
 import { NextResponse } from "next/server";
 
 type PlayerPreview = {
   placement: number | null;
+  level?: number | null;
   units: Array<{
     character_id: string;
     tier: number;
@@ -26,17 +28,25 @@ type PlayerPreview = {
     tier_current: number;
     tier_total: number;
   }>;
+  topTraits?: Array<{
+    name: string;
+    num_units: number;
+    style: number;
+    iconUrl: string | null;
+  }>;
   riotIdGameName?: string | null;
   riotIdTagline?: string | null;
 };
 
 const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
-const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
 
 async function hydratePreviewIcons(
   preview: PlayerPreview
 ): Promise<PlayerPreview> {
   const unitList = Array.isArray(preview.units) ? preview.units : [];
+  const topTraitsList = Array.isArray(preview.topTraits)
+    ? preview.topTraits
+    : [];
   const units = await Promise.all(
     unitList.map(async (unit) => {
       const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
@@ -48,17 +58,29 @@ async function hydratePreviewIcons(
         : null;
       return {
         ...unit,
-        itemIconUrls: resolvedItemIconUrls.map(
-          (url) => sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
-        ),
+        itemIconUrls: resolvedItemIconUrls.map((url) => sanitizeIconUrl(url)),
         champIconUrl: sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON
+      };
+    })
+  );
+  const topTraits = await Promise.all(
+    topTraitsList.map(async (trait) => {
+      const name = trait.name ?? "";
+      const sanitized = sanitizeIconUrl(trait.iconUrl ?? null);
+      const iconUrl =
+        sanitized ??
+        (name ? await getTftTraitIconUrl(name) : null);
+      return {
+        ...trait,
+        iconUrl
       };
     })
   );
 
   return {
     ...preview,
-    units
+    units,
+    topTraits
   };
 }
 

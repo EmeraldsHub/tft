@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getChampionIconUrl,
   getItemIconUrl,
+  getTftTraitIconUrl,
   sanitizeIconUrl
 } from "@/lib/cdragonStatic";
 
@@ -32,6 +33,7 @@ type MatchParticipant = {
   puuid?: string | null;
   riotIdGameName?: string | null;
   riotIdTagline?: string | null;
+  level?: number | null;
   units?: MatchParticipantUnit[] | null;
   traits?: MatchParticipantTrait[] | null;
 };
@@ -52,6 +54,7 @@ type PlayerPreview = {
   riotIdGameName: string | null;
   riotIdTagline: string | null;
   placement: number | null;
+  level: number | null;
   units: Array<{
     character_id: string;
     tier: number;
@@ -66,10 +69,15 @@ type PlayerPreview = {
     tier_current: number;
     tier_total: number;
   }>;
+  topTraits: Array<{
+    name: string;
+    num_units: number;
+    style: number;
+    iconUrl: string | null;
+  }>;
 };
 
 const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
-const UNKNOWN_ITEM_ICON = "/icons/unknown-item.png";
 
 function getPlacement(value: MatchParticipant) {
   const placement = value.placement;
@@ -117,7 +125,7 @@ async function buildPlayerPreviews(
               )
             : [];
           const safeItemIconUrls = itemIconUrls.map((url) =>
-            sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
+            sanitizeIconUrl(url)
           );
           const safeChampIconUrl =
             sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON;
@@ -130,13 +138,41 @@ async function buildPlayerPreviews(
           };
         })
       );
-      const traits = (participant.traits ?? []).map((trait) => ({
+      const traitsSource = Array.isArray(participant.traits)
+        ? participant.traits
+        : [];
+      const traits = traitsSource.map((trait) => ({
         name: trait.name ?? "",
         num_units: trait.num_units ?? 0,
         style: trait.style ?? 0,
         tier_current: trait.tier_current ?? 0,
         tier_total: trait.tier_total ?? 0
       }));
+      const topTraitsSource = traitsSource
+        .filter(
+          (trait) =>
+            (trait.style ?? 0) > 0 || (trait.tier_current ?? 0) > 0
+        )
+        .sort((a, b) => {
+          const styleDiff = (b.style ?? 0) - (a.style ?? 0);
+          if (styleDiff !== 0) {
+            return styleDiff;
+          }
+          return (b.num_units ?? 0) - (a.num_units ?? 0);
+        })
+        .slice(0, 5);
+      const topTraits = await Promise.all(
+        topTraitsSource.map(async (trait) => {
+          const name = trait.name ?? "";
+          const iconUrl = name ? await getTftTraitIconUrl(name) : null;
+          return {
+            name,
+            num_units: trait.num_units ?? 0,
+            style: trait.style ?? 0,
+            iconUrl
+          };
+        })
+      );
       return [
         puuid,
         {
@@ -144,8 +180,10 @@ async function buildPlayerPreviews(
           riotIdGameName: participant.riotIdGameName ?? null,
           riotIdTagline: participant.riotIdTagline ?? null,
           placement: participant.placement ?? null,
+          level: typeof participant.level === "number" ? participant.level : null,
           units,
-          traits
+          traits,
+          topTraits
         }
       ] as const;
     })
@@ -187,7 +225,7 @@ async function enrichParticipants(
               )
             : [];
           const safeItemIconUrls = itemIconUrls.map((url) =>
-            sanitizeIconUrl(url) ?? UNKNOWN_ITEM_ICON
+            sanitizeIconUrl(url)
           );
           const safeChampIconUrl =
             sanitizeIconUrl(champIconUrl) ?? UNKNOWN_UNIT_ICON;

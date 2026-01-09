@@ -21,6 +21,7 @@ export type CdragonCache = {
   loadMs: number;
   championsByApiName: Map<string, string>;
   itemsByApiName: Map<string, string>;
+  traitsByName: Map<string, string>;
 };
 
 declare global {
@@ -32,6 +33,7 @@ declare global {
 
 type CdragonSetData = {
   champions?: unknown;
+  traits?: unknown;
 };
 
 type CdragonRoot = {
@@ -109,6 +111,7 @@ async function loadCdragonCache(): Promise<CdragonCache> {
 
     const championsByApiName = new Map<string, string>();
     const itemsByApiName = new Map<string, string>();
+    const traitsByName = new Map<string, string>();
 
     const setData = Array.isArray(data.setData) ? data.setData : [];
     setData.forEach((entry) => {
@@ -136,6 +139,26 @@ async function loadCdragonCache(): Promise<CdragonCache> {
         }
         championsByApiName.set(apiName.toLowerCase(), iconPath);
       });
+
+      const traits = Array.isArray(record.traits) ? record.traits : [];
+      traits.forEach((trait) => {
+        const traitRecord = toRecord(trait);
+        if (!traitRecord) {
+          return;
+        }
+        const apiName = toString(traitRecord.apiName);
+        const name = toString(traitRecord.name);
+        const iconPath = toString(traitRecord.icon);
+        if (!iconPath) {
+          return;
+        }
+        if (apiName) {
+          traitsByName.set(apiName.toLowerCase(), iconPath);
+        }
+        if (name) {
+          traitsByName.set(name.toLowerCase(), iconPath);
+        }
+      });
     });
 
     const items = Array.isArray(data.items) ? data.items : [];
@@ -156,7 +179,8 @@ async function loadCdragonCache(): Promise<CdragonCache> {
       loadedAt: Date.now(),
       loadMs: Date.now() - startedAt,
       championsByApiName,
-      itemsByApiName
+      itemsByApiName,
+      traitsByName
     };
 
     globalThis.__tftCdragonCache = cache;
@@ -192,6 +216,21 @@ export async function getItemIconUrl(apiName: string): Promise<string | null> {
   }
   const cache = await loadCdragonCache();
   const pathValue = cache.itemsByApiName.get(id.toLowerCase());
+  if (!pathValue) {
+    return null;
+  }
+  return sanitizeIconUrl(toCdragonAssetUrl(pathValue));
+}
+
+export async function getTftTraitIconUrl(
+  name: string
+): Promise<string | null> {
+  const id = name.trim();
+  if (!id) {
+    return null;
+  }
+  const cache = await loadCdragonCache();
+  const pathValue = cache.traitsByName.get(id.toLowerCase());
   if (!pathValue) {
     return null;
   }
