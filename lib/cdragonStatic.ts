@@ -1,32 +1,38 @@
 import "server-only";
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
-const CDRAGON_IT_URL =
-  "https://raw.communitydragon.org/latest/cdragon/tft/it_it.json";
-const CDRAGON_EN_URL =
-  "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json";
+const TFT_CHAMPIONS_URL =
+  "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/tftchampions.json";
+const TFT_ITEMS_URL =
+  "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/tftitems.json";
 const CDRAGON_ASSET_BASE =
   "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/";
-const LOCAL_CDRAGON_PATH = path.join(
-  process.cwd(),
-  "public",
-  "cdragon",
-  "tft-set.json"
-);
+const CDRAGON_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-type IconCache = {
-  champIconByApiName: Record<string, string>;
-  itemIconByApiName: Record<string, string>;
+export type CdragonCache = {
   loadedAt: number;
+  loadMs: number;
+  championsByApiName: Map<string, CdragonChampion>;
+  itemsByApiName: Map<string, CdragonItem>;
+};
+
+type CdragonChampion = {
+  apiName?: string;
+  characterName?: string;
+  squareIconPath?: string;
+  tileIconPath?: string;
+  iconPath?: string;
+};
+
+type CdragonItem = {
+  apiName?: string;
+  iconPath?: string;
 };
 
 declare global {
   // eslint-disable-next-line no-var
-  var __cdragonIconCache: IconCache | undefined;
+  var __tftCdragonCache: CdragonCache | undefined;
   // eslint-disable-next-line no-var
-  var __cdragonIconLoadPromise: Promise<IconCache> | undefined;
+  var __tftCdragonLoadPromise: Promise<CdragonCache> | undefined;
 }
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -40,7 +46,7 @@ function toString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function toCDragonAssetUrl(pathValue?: string | null): string | null {
+function toCdragonAssetUrl(pathValue?: string | null): string | null {
   if (!pathValue) {
     return null;
   }
@@ -50,7 +56,6 @@ function toCDragonAssetUrl(pathValue?: string | null): string | null {
   }
   normalized = normalized.replace(/^\//, "");
   normalized = normalized.replace(/^lol-game-data\/assets\//, "assets/");
-  normalized = normalized.replace(/^assets\//, "assets/");
   if (!normalized.startsWith("assets/")) {
     return null;
   }
@@ -72,77 +77,51 @@ export function sanitizeIconUrl(url?: string | null): string | null {
   return null;
 }
 
-async function fetchCdragonJson(): Promise<unknown> {
-  try {
-    const local = await readFile(LOCAL_CDRAGON_PATH, "utf-8");
-    return JSON.parse(local) as unknown;
-  } catch {
-    // Fall through to remote fetch.
-  }
+async function fetchJsonWithTimeout(
+  url: string,
+  timeoutMs: number
+): Promise<unknown | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const response = await fetch(CDRAGON_IT_URL, { cache: "no-store" });
-  if (response.ok) {
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return null;
+    }
     return (await response.json()) as unknown;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
-  const fallback = await fetch(CDRAGON_EN_URL, { cache: "no-store" });
-  if (!fallback.ok) {
-    throw new Error("Failed to load CDragon TFT JSON");
-  }
-  return (await fallback.json()) as unknown;
 }
 
-async function loadCdragonIcons(): Promise<IconCache> {
-  if (globalThis.__cdragonIconCache) {
-    return globalThis.__cdragonIconCache;
+async function loadCdragonCache(): Promise<CdragonCache> {
+  const cached = globalThis.__tftCdragonCache;
+  if (cached && Date.now() - cached.loadedAt < CDRAGON_CACHE_TTL_MS) {
+    return cached;
   }
 
-  if (globalThis.__cdragonIconLoadPromise) {
-    return globalThis.__cdragonIconLoadPromise;
+  if (globalThis.__tftCdragonLoadPromise) {
+    return globalThis.__tftCdragonLoadPromise;
   }
 
-  globalThis.__cdragonIconLoadPromise = (async () => {
-    const data = await fetchCdragonJson();
-    const champIconByApiName: Record<string, string> = {};
-    const itemIconByApiName: Record<string, string> = {};
+  globalThis.__tftCdragonLoadPromise = (async () => {
+    const startedAt = Date.now();
+    const [championsData, itemsData] = await Promise.all([
+      fetchJsonWithTimeout(TFT_CHAMPIONS_URL, 5000),
+      fetchJsonWithTimeout(TFT_ITEMS_URL, 5000)
+    ]);
 
-    const root = toRecord(data);
-    const setData = root && Array.isArray(root.setData) ? root.setData : [];
-    const sets = root && typeof root.sets === "object" ? root.sets : null;
-    const topLevelItems = root && Array.isArray(root.items) ? root.items : [];
+    const championsByApiName = new Map<string, CdragonChampion>();
+    const itemsByApiName = new Map<string, CdragonItem>();
 
-    const upsertChamp = (apiName: string, iconPath: string | null) => {
-      const url = sanitizeIconUrl(toCDragonAssetUrl(iconPath));
-      if (!url) {
-        return;
-      }
-      if (!champIconByApiName[apiName]) {
-        champIconByApiName[apiName] = url;
-      }
-      const lower = apiName.toLowerCase();
-      if (!champIconByApiName[lower]) {
-        champIconByApiName[lower] = url;
-      }
-    };
-
-    const upsertItem = (apiName: string, iconPath: string | null) => {
-      const url = sanitizeIconUrl(toCDragonAssetUrl(iconPath));
-      if (!url) {
-        return;
-      }
-      if (!itemIconByApiName[apiName]) {
-        itemIconByApiName[apiName] = url;
-      }
-      const lower = apiName.toLowerCase();
-      if (!itemIconByApiName[lower]) {
-        itemIconByApiName[lower] = url;
-      }
-    };
-
-    const scanChampions = (entries: unknown) => {
-      if (!Array.isArray(entries)) {
-        return;
-      }
-      entries.forEach((entry) => {
+    if (Array.isArray(championsData)) {
+      championsData.forEach((entry) => {
         const record = toRecord(entry);
         if (!record) {
           return;
@@ -151,19 +130,21 @@ async function loadCdragonIcons(): Promise<IconCache> {
         if (!apiName) {
           return;
         }
-        const tileIcon = toString(record.tileIcon);
-        const squareIcon = toString(record.squareIcon);
-        const icon = toString(record.icon);
-        const resolved = tileIcon ?? squareIcon ?? icon;
-        upsertChamp(apiName, resolved ?? null);
+        const normalized = apiName.toLowerCase();
+        const champ: CdragonChampion = {
+          apiName: toString(record.apiName) ?? undefined,
+          characterName: toString(record.characterName) ?? undefined,
+          squareIconPath: toString(record.squareIconPath) ?? undefined,
+          tileIconPath: toString(record.tileIconPath) ?? undefined,
+          iconPath: toString(record.iconPath) ?? undefined
+        };
+        championsByApiName.set(apiName, champ);
+        championsByApiName.set(normalized, champ);
       });
-    };
+    }
 
-    const scanItems = (entries: unknown) => {
-      if (!Array.isArray(entries)) {
-        return;
-      }
-      entries.forEach((entry) => {
+    if (Array.isArray(itemsData)) {
+      itemsData.forEach((entry) => {
         const record = toRecord(entry);
         if (!record) {
           return;
@@ -172,47 +153,31 @@ async function loadCdragonIcons(): Promise<IconCache> {
         if (!apiName) {
           return;
         }
-        const icon = toString(record.icon);
-        upsertItem(apiName, icon ?? null);
-      });
-    };
-
-    setData.forEach((setEntry) => {
-      const setRecord = toRecord(setEntry);
-      if (!setRecord) {
-        return;
-      }
-      scanChampions(setRecord.champions);
-      scanItems(setRecord.items);
-    });
-
-    if (sets && typeof sets === "object") {
-      Object.values(sets).forEach((setEntry) => {
-        const setRecord = toRecord(setEntry);
-        if (!setRecord) {
-          return;
-        }
-        scanChampions(setRecord.champions);
-        scanItems(setRecord.items);
+        const normalized = apiName.toLowerCase();
+        const item: CdragonItem = {
+          apiName: toString(record.apiName) ?? undefined,
+          iconPath: toString(record.iconPath) ?? undefined
+        };
+        itemsByApiName.set(apiName, item);
+        itemsByApiName.set(normalized, item);
       });
     }
 
-    scanItems(topLevelItems);
-
-    const cache: IconCache = {
-      champIconByApiName,
-      itemIconByApiName,
-      loadedAt: Date.now()
+    const cache: CdragonCache = {
+      loadedAt: Date.now(),
+      loadMs: Date.now() - startedAt,
+      championsByApiName,
+      itemsByApiName
     };
 
-    globalThis.__cdragonIconCache = cache;
+    globalThis.__tftCdragonCache = cache;
     return cache;
   })();
 
   try {
-    return await globalThis.__cdragonIconLoadPromise;
+    return await globalThis.__tftCdragonLoadPromise;
   } finally {
-    globalThis.__cdragonIconLoadPromise = undefined;
+    globalThis.__tftCdragonLoadPromise = undefined;
   }
 }
 
@@ -223,8 +188,14 @@ export async function getChampionIconUrl(
   if (!id) {
     return null;
   }
-  const { champIconByApiName } = await loadCdragonIcons();
-  return champIconByApiName[id] ?? champIconByApiName[id.toLowerCase()] ?? null;
+  const cache = await loadCdragonCache();
+  const champ = cache.championsByApiName.get(id) ??
+    cache.championsByApiName.get(id.toLowerCase());
+  if (!champ) {
+    return null;
+  }
+  const path = champ.squareIconPath ?? champ.tileIconPath ?? champ.iconPath ?? null;
+  return sanitizeIconUrl(toCdragonAssetUrl(path));
 }
 
 export async function getItemIconUrl(apiName: string): Promise<string | null> {
@@ -232,6 +203,19 @@ export async function getItemIconUrl(apiName: string): Promise<string | null> {
   if (!id) {
     return null;
   }
-  const { itemIconByApiName } = await loadCdragonIcons();
-  return itemIconByApiName[id] ?? itemIconByApiName[id.toLowerCase()] ?? null;
+  const cache = await loadCdragonCache();
+  const item = cache.itemsByApiName.get(id) ??
+    cache.itemsByApiName.get(id.toLowerCase());
+  if (!item) {
+    return null;
+  }
+  return sanitizeIconUrl(toCdragonAssetUrl(item.iconPath ?? null));
+}
+
+export async function getCdragonCacheInfo() {
+  const cache = globalThis.__tftCdragonCache;
+  if (!cache) {
+    return null;
+  }
+  return { loadedAt: cache.loadedAt, loadMs: cache.loadMs };
 }

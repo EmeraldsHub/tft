@@ -157,6 +157,28 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const syncLeaderboard = async () => {
+    const response = await fetch("/api/admin/sync-leaderboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ concurrency: 5 })
+    });
+
+    const data = (await response.json()) as {
+      total?: number;
+      results?: Array<{ id: string; riot_id: string; status: string }>;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      setStatus(data.error ?? "Errore durante il sync leaderboard.");
+      return;
+    }
+
+    setStatus(`Leaderboard sync completato: ${data.total ?? 0} player.`);
+    await loadPlayers();
+  };
+
   const saveProfileImage = async (player: TrackedPlayer) => {
     const nextUrl = (imageEdits[player.id] ?? player.profile_image_url ?? "").trim();
     const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
@@ -231,6 +253,13 @@ export function AdminDashboard() {
             className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
           >
             Batch sync
+          </button>
+          <button
+            type="button"
+            onClick={syncLeaderboard}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+          >
+            Sync leaderboard
           </button>
           {players.length === 0 ? (
             <p className="text-sm text-slate-400">Nessun player inserito.</p>

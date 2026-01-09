@@ -641,40 +641,76 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
 }
 
 export async function getLeaderboardData() {
-  const allPlayers = (await listTrackedPlayers()) as TrackedPlayer[];
-  const players = allPlayers.filter((player) => player.is_active);
+  const startedAt = Date.now();
+  const supabaseStart = Date.now();
+  const { data, error } = await supabaseAdmin
+    .from("tracked_players")
+    .select(
+      [
+        "id",
+        "riot_id",
+        "slug",
+        "region",
+        "avg_placement_10",
+        "live_in_game",
+        "ranked_tier",
+        "ranked_rank",
+        "ranked_lp",
+        "ranked_queue"
+      ].join(",")
+    )
+    .eq("is_active", true);
+  const supabaseMs = Date.now() - supabaseStart;
 
-  const enriched = await Promise.all(
-    players.map(async (player) => {
-      const avgPlacement = await ensureAveragePlacement(player);
-      const live = await getLiveGameStatus(player);
-      const rankedResult = await getRankedInfo(player);
-      return {
-        ...player,
-        avgPlacement,
-        live,
-        ranked: rankedResult.ranked,
-        rankIconUrl: rankedResult.rankIconUrl,
-        rankedQueue: rankedResult.rankedQueue
-      };
-    })
-  );
+  if (error) {
+    throw error;
+  }
 
-  const sorted = enriched.sort((a, b) => {
-    const aKey = getRankSortKey(a);
-    const bKey = getRankSortKey(b);
+  const rows = (data ?? []) as Array<TrackedPlayer>;
+  const enriched = rows.map((player) => {
+    const ranked =
+      player.ranked_tier && player.ranked_rank && player.ranked_lp !== null
+        ? {
+            tier: player.ranked_tier,
+            rank: player.ranked_rank,
+            leaguePoints: player.ranked_lp
+          }
+        : null;
 
-    if (aKey.tierScore !== bKey.tierScore) {
-      return bKey.tierScore - aKey.tierScore;
-    }
-    if (aKey.divisionScore !== bKey.divisionScore) {
-      return bKey.divisionScore - aKey.divisionScore;
-    }
-    if (aKey.lp !== bKey.lp) {
-      return bKey.lp - aKey.lp;
-    }
-    return a.riot_id.localeCompare(b.riot_id);
+    const rankScore = ranked
+      ? (tierOrder[ranked.tier] ?? -1) * 1000 +
+        (divisionOrder[ranked.rank] ?? 0) * 100 +
+        (ranked.leaguePoints ?? 0)
+      : -1;
+
+    return {
+      ...player,
+      avgPlacement: player.avg_placement_10 ?? null,
+      live: { inGame: Boolean(player.live_in_game) },
+      ranked,
+      rankIconUrl: ranked ? getRankIconUrl(ranked.tier) : null,
+      rankedQueue: player.ranked_queue ?? null,
+      __rankScore: rankScore
+    };
   });
+
+  const sorted = enriched
+    .sort((a, b) => {
+      if (a.__rankScore !== b.__rankScore) {
+        return b.__rankScore - a.__rankScore;
+      }
+      return a.riot_id.localeCompare(b.riot_id);
+    })
+    .map(({ __rankScore, ...rest }) => rest);
+
+  if (process.env.DEBUG_PERF === "1") {
+    console.info(
+      "[leaderboard] supabase=%dms total=%dms rows=%d",
+      supabaseMs,
+      Date.now() - startedAt,
+      sorted.length
+    );
+  }
 
   return sorted;
 }
