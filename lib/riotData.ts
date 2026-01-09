@@ -8,7 +8,6 @@ import {
   getLolSummonerByPuuid,
   getMatchById,
   getMatchIdsByPuuid,
-  getSummonerByPuuid,
   parseRiotId
 } from "@/lib/riot";
 import { slugifyRiotId } from "@/lib/slugify";

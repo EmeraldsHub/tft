@@ -15,6 +15,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  console.log("[riot] RIOT_API_KEY present?", Boolean(process.env.RIOT_API_KEY));
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) {
