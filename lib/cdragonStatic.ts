@@ -1,11 +1,20 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 const CDRAGON_IT_URL =
   "https://raw.communitydragon.org/latest/cdragon/tft/it_it.json";
 const CDRAGON_EN_URL =
   "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json";
 const CDRAGON_ASSET_BASE =
   "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/";
+const LOCAL_CDRAGON_PATH = path.join(
+  process.cwd(),
+  "public",
+  "cdragon",
+  "tft-set.json"
+);
 
 type IconCache = {
   champIconByApiName: Record<string, string>;
@@ -64,6 +73,13 @@ export function sanitizeIconUrl(url?: string | null): string | null {
 }
 
 async function fetchCdragonJson(): Promise<unknown> {
+  try {
+    const local = await readFile(LOCAL_CDRAGON_PATH, "utf-8");
+    return JSON.parse(local) as unknown;
+  } catch {
+    // Fall through to remote fetch.
+  }
+
   const response = await fetch(CDRAGON_IT_URL, { cache: "no-store" });
   if (response.ok) {
     return (await response.json()) as unknown;
