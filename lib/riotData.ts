@@ -16,6 +16,7 @@ type TrackedPlayer = {
   id: string;
   riot_id: string;
   region: string;
+  is_active: boolean;
   puuid: string | null;
   summoner_id: string | null;
   avg_placement_10: number | null;
