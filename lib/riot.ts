@@ -84,7 +84,7 @@ export type RiotSummoner = {
   name: string;
 };
 
-export type RiotLeagueEntry = {
+export type TftLeagueEntry = {
   queueType: string;
   tier: string;
   rank: string;
@@ -141,7 +141,7 @@ export async function getLeagueEntriesBySummonerId(summonerId: string) {
     summonerId
   )}`;
 
-  return riotFetch<RiotLeagueEntry[]>(url);
+  return riotFetch<TftLeagueEntry[]>(url);
 }
 
 export async function getLeagueEntriesByPuuid(puuid: string) {
@@ -149,7 +149,7 @@ export async function getLeagueEntriesByPuuid(puuid: string) {
     puuid
   )}`;
 
-  return riotFetch<RiotLeagueEntry[]>(url);
+  return riotFetch<TftLeagueEntry[]>(url);
 }
 
 export async function getMatchIdsByPuuid(puuid: string, count = 10) {

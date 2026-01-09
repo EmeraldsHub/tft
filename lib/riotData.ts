@@ -9,6 +9,7 @@ import {
   getMatchIdsByPuuid,
   parseRiotId
 } from "@/lib/riot";
+import type { TftLeagueEntry } from "@/lib/riot";
 import { slugifyRiotId } from "@/lib/slugify";
 
 type TrackedPlayer = {
@@ -44,6 +45,15 @@ export type RankedInfo = {
   leaguePoints: number;
 } | null;
 
+type RankedCacheStatus = "cached" | "skipped" | "updated";
+
+type RankedCacheResult = {
+  ranked: RankedInfo | null;
+  rankIconUrl: string | null;
+  rankedQueue: string | null;
+  status: RankedCacheStatus;
+};
+
 export type LiveGameStatus = {
   inGame: boolean;
   gameStartTime: number | null;
@@ -57,7 +67,10 @@ export type MatchSummary = {
   gameDateTime: number | null;
 };
 
-const rankCache = new Map<string, { value: RankedInfo; expiresAt: number }>();
+const rankCache = new Map<
+  string,
+  { value: RankedInfo | null; expiresAt: number }
+>();
 
 const tierOrder: Record<string, number> = {
   CHALLENGER: 9,
@@ -341,12 +354,7 @@ export async function syncPlayersBatch(limit = 10) {
 export async function getRankedInfo(
   player: TrackedPlayer,
   force = false
-): Promise<{
-  ranked: RankedInfo;
-  rankIconUrl: string | null;
-  rankedQueue: string | null;
-  status: "updated" | "cached" | "skipped";
-}> {
+): Promise<RankedCacheResult> {
   const cached = rankCache.get(player.id);
   const now = Date.now();
   if (!force && cached && cached.expiresAt > now) {
@@ -379,7 +387,7 @@ function getRankIconUrl(tier: string | null) {
   return `https://cdn.communitydragon.org/latest/tft/ranked-icons/${slug}.png`;
 }
 
-function pickRankedEntry(entries: Array<{ queueType: string }> | null) {
+function pickRankedEntry(entries: TftLeagueEntry[] | null): TftLeagueEntry | null {
   if (!entries) {
     return null;
   }
@@ -391,7 +399,10 @@ function pickRankedEntry(entries: Array<{ queueType: string }> | null) {
   );
 }
 
-async function ensureRankedCache(player: TrackedPlayer, force = false) {
+async function ensureRankedCache(
+  player: TrackedPlayer,
+  force = false
+): Promise<RankedCacheResult> {
   if (player.ranked_updated_at && !force && isFresh(player.ranked_updated_at, rankTtlMs)) {
     if (!player.ranked_tier || !player.ranked_rank || player.ranked_lp === null) {
       return {
