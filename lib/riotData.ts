@@ -75,7 +75,30 @@ export async function ensureSummonerId(
   playerId: string,
   puuid: string | null
 ) {
-  const { summonerId } = await ensureSummonerIdWithError(playerId, puuid);
+  if (!puuid) {
+    return null;
+  }
+
+  const summoner = await getLolSummonerByPuuid(puuid);
+  const summonerId = summoner?.id ?? null;
+  if (!summonerId) {
+    console.log("[riot] Summoner-V4 lookup failed for player", playerId);
+    return null;
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("tracked_players")
+    .update({
+      summoner_id: summonerId,
+      riot_data_updated_at: new Date().toISOString()
+    })
+    .eq("id", playerId);
+
+  if (updateError) {
+    console.log("[riot] Summoner-V4 persist failed for player", playerId);
+    return null;
+  }
+
   return summonerId;
 }
 
@@ -87,27 +110,10 @@ export async function ensureSummonerIdWithError(
     return { summonerId: null, error: "Missing PUUID." };
   }
 
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from("tracked_players")
-    .select("summoner_id")
-    .eq("id", playerId)
-    .maybeSingle();
-
-  if (existingError) {
-    return { summonerId: null, error: "Failed to load player." };
-  }
-
-  if (existing?.summoner_id) {
-    return { summonerId: existing.summoner_id, error: null };
-  }
-
-  if (!process.env.RIOT_API_KEY) {
-    return { summonerId: null, error: "Missing RIOT_API_KEY." };
-  }
-
   const summoner = await getLolSummonerByPuuid(puuid);
   const summonerId = summoner?.id ?? null;
   if (!summonerId) {
+    console.log("[riot] Summoner-V4 lookup failed for player", playerId);
     return {
       summonerId: null,
       error: "Summoner not found or API unavailable."
@@ -123,6 +129,7 @@ export async function ensureSummonerIdWithError(
     .eq("id", playerId);
 
   if (updateError) {
+    console.log("[riot] Summoner-V4 persist failed for player", playerId);
     return { summonerId: null, error: "Failed to persist summoner id." };
   }
 
