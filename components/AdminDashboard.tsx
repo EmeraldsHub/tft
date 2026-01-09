@@ -90,6 +90,10 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const invalidateLeaderboardCache = async () => {
+    await fetch("/api/admin/invalidate-cache", { method: "POST" });
+  };
+
   const deletePlayer = async (player: TrackedPlayer) => {
     const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
       method: "DELETE"
@@ -100,6 +104,7 @@ export function AdminDashboard() {
       return;
     }
 
+    await invalidateLeaderboardCache();
     await loadPlayers();
   };
 
@@ -193,6 +198,7 @@ export function AdminDashboard() {
     }
 
     setStatus("Immagine aggiornata.");
+    await invalidateLeaderboardCache();
     await loadPlayers();
   };
 

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-
+import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
 import { syncTrackedPlayerById } from "@/lib/riotData";
 import { NextResponse } from "next/server";
 
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await syncTrackedPlayerById(id, { force: true });
+    invalidateLeaderboardCache();
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

@@ -1,15 +1,8 @@
 export const dynamic = "force-dynamic";
 
+import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
 import { deleteTrackedPlayer, updateTrackedPlayer } from "@/lib/riotData";
 import { NextResponse } from "next/server";
-
-function clearLeaderboardCache() {
-  if (typeof globalThis !== "undefined") {
-    // eslint-disable-next-line no-underscore-dangle
-    (globalThis as typeof globalThis & { __leaderboardCache?: unknown })
-      .__leaderboardCache = undefined;
-  }
-}
 
 function ensureAdmin(request: Request) {
   const cookie = request.headers.get("cookie") ?? "";
@@ -31,7 +24,7 @@ export async function PATCH(
 
   try {
     const result = await updateTrackedPlayer(params.id, body);
-    clearLeaderboardCache();
+    invalidateLeaderboardCache();
     return NextResponse.json({ result });
   } catch (err) {
     return NextResponse.json(
@@ -51,7 +44,7 @@ export async function DELETE(
 
   try {
     await deleteTrackedPlayer(params.id);
-    clearLeaderboardCache();
+    invalidateLeaderboardCache();
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Delete failed." },

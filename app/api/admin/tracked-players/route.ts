@@ -1,17 +1,10 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
 import { createTrackedPlayer, listTrackedPlayers } from "@/lib/riotData";
 import { slugifyRiotId } from "@/lib/slugify";
 import { NextResponse } from "next/server";
-
-function clearLeaderboardCache() {
-  if (typeof globalThis !== "undefined") {
-    // eslint-disable-next-line no-underscore-dangle
-    (globalThis as typeof globalThis & { __leaderboardCache?: unknown })
-      .__leaderboardCache = undefined;
-  }
-}
 
 function ensureAdmin(request: Request) {
   const cookie = request.headers.get("cookie") ?? "";
@@ -66,7 +59,7 @@ export async function POST(request: Request) {
       slug,
       profileImageUrl
     });
-    clearLeaderboardCache();
+    invalidateLeaderboardCache();
     return NextResponse.json({ result, warning });
   } catch (err) {
     return NextResponse.json(
