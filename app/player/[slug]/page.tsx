@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { PlayerSyncButton } from "@/components/PlayerSyncButton";
+import { RankIcon } from "@/components/RankIcon";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Container } from "@/components/ui/Container";
@@ -51,6 +52,8 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           rank: string;
           leaguePoints: number;
         } | null;
+        rankIconUrl: string | null;
+        rankedQueue: string | null;
         avgPlacement: number | null;
         live: {
           inGame: boolean;
@@ -69,7 +72,9 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
         ranked: null,
         avgPlacement: null,
         live: { inGame: false, gameStartTime: null, participantCount: null },
-        recentMatches: []
+        recentMatches: [],
+        rankIconUrl: null,
+        rankedQueue: null
       }
     )
     .catch(() => ({
@@ -191,32 +196,27 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                     value={
                       rankedInfo
                         ? `${rankedInfo.tier} ${rankedInfo.rank} · ${rankedInfo.leaguePoints} LP`
-                        : player.summoner_id
-                          ? "Unranked / No ranked data"
-                          : "Rank not available yet (not synced)"
+                        : "Unranked / No ranked data"
                     }
                     helper={
                       rankedInfo
                         ? undefined
-                        : player.summoner_id
-                          ? "No ranked TFT data found. Play ranked to appear."
-                          : "Sync required to fetch ranked data."
+                        : "No ranked TFT data found. Play ranked to appear."
                     }
                   />
+                  {rankedInfo ? (
+                    <div className="mt-3">
+                      <RankIcon tier={rankedInfo.tier} size={20} />
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
               <Card>
                 <CardContent>
                   <Stat
-                    label="Matches analyzed"
-                    value={payload.recentMatches.length}
-                    helper="Last 10 matches."
+                    label="Last updated"
+                    value={lastUpdatedLabel}
                   />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent>
-                  <Stat label="Last updated" value={lastUpdatedLabel} />
                 </CardContent>
               </Card>
             </div>
@@ -277,7 +277,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                         {placement !== null && placement <= 4 ? (
                           <Badge variant="yellow">Top 4</Badge>
                         ) : (
-                          <Badge variant="neutral">Result</Badge>
+                          <Badge variant="red">Bottom 4</Badge>
                         )}
                       </div>
                     );

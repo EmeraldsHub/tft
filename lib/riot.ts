@@ -84,12 +84,6 @@ export type RiotSummoner = {
   name: string;
 };
 
-export type LolSummoner = {
-  id: string;
-  puuid: string;
-  name: string;
-};
-
 export type RiotLeagueEntry = {
   queueType: string;
   tier: string;
@@ -140,17 +134,19 @@ export async function getSummonerByPuuid(puuid: string) {
   return riotFetch<RiotSummoner>(url);
 }
 
-export async function getLolSummonerByPuuid(puuid: string) {
-  const url = `${PLATFORM_BASE}/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(
-    puuid
-  )}`;
-
-  return riotFetch<LolSummoner>(url);
-}
+// LoL Summoner-V4 is not used for TFT ranked lookups.
 
 export async function getLeagueEntriesBySummonerId(summonerId: string) {
   const url = `${PLATFORM_BASE}/tft/league/v1/entries/by-summoner/${encodeURIComponent(
     summonerId
+  )}`;
+
+  return riotFetch<RiotLeagueEntry[]>(url);
+}
+
+export async function getLeagueEntriesByPuuid(puuid: string) {
+  const url = `${PLATFORM_BASE}/tft/league/v1/by-puuid/${encodeURIComponent(
+    puuid
   )}`;
 
   return riotFetch<RiotLeagueEntry[]>(url);

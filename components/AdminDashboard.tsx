@@ -128,27 +128,31 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
-  const backfillSummoners = async () => {
-    const response = await fetch("/api/admin/backfill-summoner-ids", {
+  const batchSync = async () => {
+    const response = await fetch("/api/admin/sync-players", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limit: 25 })
+      body: JSON.stringify({ limit: 10 })
     });
 
     const data = (await response.json()) as {
-      updated?: number;
-      skipped?: number;
       total?: number;
+      results?: Array<{
+        id: string;
+        riot_id: string;
+        status: string;
+        warning?: string | null;
+      }>;
       error?: string;
     };
 
     if (!response.ok) {
-      setStatus(data.error ?? "Errore durante il backfill.");
+      setStatus(data.error ?? "Errore durante il sync.");
       return;
     }
 
     setStatus(
-      `Backfill completato: ${data.updated ?? 0} aggiornati, ${data.skipped ?? 0} saltati.`
+      `Sync batch completato: ${data.total ?? 0} player processati.`
     );
     await loadPlayers();
   };
@@ -223,10 +227,10 @@ export function AdminDashboard() {
         <div className="mt-4 space-y-3">
           <button
             type="button"
-            onClick={backfillSummoners}
+            onClick={batchSync}
             className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
           >
-            Backfill Summoner IDs
+            Batch sync
           </button>
           {players.length === 0 ? (
             <p className="text-sm text-slate-400">Nessun player inserito.</p>

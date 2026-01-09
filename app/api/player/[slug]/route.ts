@@ -15,30 +15,5 @@ export async function GET(
 ) {
   const payload = await getPlayerProfileBySlug(params.slug);
 
-  const {
-    debugEnsuredSummonerId,
-    debugEnsureSummonerIdError,
-    ...publicPayload
-  } = payload as {
-    debugEnsuredSummonerId?: string | null;
-    debugEnsureSummonerIdError?: string | null;
-  };
-
-  console.log(
-    "[debug] ensuredSummonerId",
-    debugEnsuredSummonerId ?? null,
-    "hasKey",
-    Boolean(process.env.RIOT_API_KEY)
-  );
-
-  if (!ensureAdmin(request)) {
-    return NextResponse.json(publicPayload);
-  }
-
-  return NextResponse.json({
-    ...publicPayload,
-    debugEnsuredSummonerId: debugEnsuredSummonerId ?? null,
-    debugHasRiotKey: Boolean(process.env.RIOT_API_KEY),
-    debugEnsureSummonerIdError: debugEnsureSummonerIdError ?? null
-  });
+  return NextResponse.json(payload);
 }

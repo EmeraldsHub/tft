@@ -24,6 +24,11 @@ export function PlayerSyncButton({ playerId, className }: Props) {
     const data = (await response.json()) as {
       warning?: string | null;
       error?: string;
+      statuses?: {
+        ranked: string;
+        live: string;
+        avgPlacement: string;
+      };
     };
 
     if (!response.ok) {
@@ -36,6 +41,11 @@ export function PlayerSyncButton({ playerId, className }: Props) {
       setStatus(`Sync completato con avviso: ${data.warning}`);
     } else {
       setStatus("Sync completato.");
+    }
+    if (data.statuses) {
+      setStatus(
+        `Sync ${data.statuses.ranked}/${data.statuses.live}/${data.statuses.avgPlacement}`
+      );
     }
     setIsLoading(false);
     window.location.reload();

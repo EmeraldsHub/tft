@@ -3,9 +3,8 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getAccountByRiotId,
-  getLeagueEntriesBySummonerId,
+  getLeagueEntriesByPuuid,
   getLiveGameByPuuid,
-  getLolSummonerByPuuid,
   getMatchById,
   getMatchIdsByPuuid,
   parseRiotId
@@ -22,6 +21,14 @@ type TrackedPlayer = {
   avg_placement_updated_at: string | null;
   riot_data_updated_at: string | null;
   profile_image_url: string | null;
+  ranked_tier: string | null;
+  ranked_rank: string | null;
+  ranked_lp: number | null;
+  ranked_queue: string | null;
+  ranked_updated_at: string | null;
+  live_in_game: boolean | null;
+  live_game_start_time: number | null;
+  live_updated_at: string | null;
 };
 
 type AvgPlacementSource = {
@@ -52,6 +59,29 @@ export type MatchSummary = {
 
 const rankCache = new Map<string, { value: RankedInfo; expiresAt: number }>();
 
+const tierOrder: Record<string, number> = {
+  CHALLENGER: 9,
+  GRANDMASTER: 8,
+  MASTER: 7,
+  DIAMOND: 6,
+  EMERALD: 5,
+  PLATINUM: 4,
+  GOLD: 3,
+  SILVER: 2,
+  BRONZE: 1,
+  IRON: 0
+};
+
+const divisionOrder: Record<string, number> = {
+  I: 4,
+  II: 3,
+  III: 2,
+  IV: 1
+};
+
+const rankTtlMs = 60 * 1000;
+const liveTtlMs = 45 * 1000;
+
 type CreateTrackedPlayerInput = {
   riotId: string;
   region: string;
@@ -69,79 +99,12 @@ type TrackedPlayerUpdate = {
   profile_image_url?: string | null;
 };
 
-const rankTtlMs = 15 * 60 * 1000;
-
-export async function ensureSummonerId(
-  playerId: string,
-  puuid: string | null
-) {
-  if (!puuid) {
-    return null;
-  }
-
-  const summoner = await getLolSummonerByPuuid(puuid);
-  const summonerId = summoner?.id ?? null;
-  if (!summonerId) {
-    console.log("[riot] Summoner-V4 lookup failed for player", playerId);
-    return null;
-  }
-
-  const { error: updateError } = await supabaseAdmin
-    .from("tracked_players")
-    .update({
-      summoner_id: summonerId,
-      riot_data_updated_at: new Date().toISOString()
-    })
-    .eq("id", playerId);
-
-  if (updateError) {
-    console.log("[riot] Summoner-V4 persist failed for player", playerId);
-    return null;
-  }
-
-  return summonerId;
-}
-
-export async function ensureSummonerIdWithError(
-  playerId: string,
-  puuid: string | null
-) {
-  if (!puuid) {
-    return { summonerId: null, error: "Missing PUUID." };
-  }
-
-  const summoner = await getLolSummonerByPuuid(puuid);
-  const summonerId = summoner?.id ?? null;
-  if (!summonerId) {
-    console.log("[riot] Summoner-V4 lookup failed for player", playerId);
-    return {
-      summonerId: null,
-      error: "Summoner not found or API unavailable."
-    };
-  }
-
-  const { error: updateError } = await supabaseAdmin
-    .from("tracked_players")
-    .update({
-      summoner_id: summonerId,
-      riot_data_updated_at: new Date().toISOString()
-    })
-    .eq("id", playerId);
-
-  if (updateError) {
-    console.log("[riot] Summoner-V4 persist failed for player", playerId);
-    return { summonerId: null, error: "Failed to persist summoner id." };
-  }
-
-  return { summonerId, error: null };
-}
+// Summoner ID is no longer required for TFT ranked lookups.
 
 export async function listTrackedPlayers() {
   const { data, error } = await supabaseAdmin
     .from("tracked_players")
-    .select(
-      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-    )
+    .select("*")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -178,17 +141,7 @@ export async function resolveRiotDataWithWarning(
     };
   }
 
-  const summoner = await getLolSummonerByPuuid(puuid);
-  const summonerId = summoner?.id ?? null;
-  if (!summonerId) {
-    return {
-      puuid,
-      summonerId: null,
-      warning: "Summoner not found or API unavailable."
-    };
-  }
-
-  return { puuid, summonerId, warning: null };
+  return { puuid, summonerId: null, warning: null };
 }
 
 export async function createTrackedPlayer({
@@ -218,9 +171,7 @@ export async function createTrackedPlayer({
       riot_data_updated_at: riotDataUpdatedAt,
       profile_image_url: profileImageUrl ?? null
     })
-    .select(
-      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-    )
+    .select("*")
     .single();
 
   if (error || !data) {
@@ -253,9 +204,7 @@ export async function updateTrackedPlayer(
     .from("tracked_players")
     .update(payload)
     .eq("id", playerId)
-    .select(
-      "id, riot_id, region, slug, is_active, created_at, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-    )
+    .select("*")
     .single();
 
   if (error || !data) {
@@ -277,50 +226,29 @@ export async function deleteTrackedPlayer(playerId: string) {
 }
 
 export async function backfillSummonerIds(limit = 25) {
-  const { data, error } = await supabaseAdmin
-    .from("tracked_players")
-    .select("id, puuid")
-    .is("summoner_id", null)
-    .not("puuid", "is", null)
-    .limit(limit);
-
-  if (error) {
-    throw error;
-  }
-
-  const rows = data ?? [];
-  let updated = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const summonerId = await ensureSummonerId(row.id, row.puuid);
-    if (summonerId) {
-      updated += 1;
-    } else {
-      skipped += 1;
-    }
-  }
-
-  return { updated, skipped, total: rows.length };
+  return { updated: 0, skipped: 0, total: 0, limit };
 }
 
 export async function resolveRiotData(riotId: string) {
   const resolved = await resolveRiotDataWithWarning(riotId);
-  if (!resolved.puuid || !resolved.summonerId) {
+  if (!resolved.puuid) {
     return null;
   }
-  return { puuid: resolved.puuid, summonerId: resolved.summonerId };
+  return { puuid: resolved.puuid, summonerId: null };
 }
 
-export async function syncTrackedPlayerById(playerId: string) {
+export async function syncTrackedPlayerById(
+  playerId: string,
+  { force = false }: { force?: boolean } = {}
+) {
   const { data, error } = await supabaseAdmin
     .from("tracked_players")
-    .select("id, riot_id, region, puuid, summoner_id")
+    .select("*")
     .eq("id", playerId)
     .maybeSingle();
 
   if (error || !data) {
-    throw new Error("Tracked player not found.");
+    return { updated: false, warning: "Tracked player not found." };
   }
 
   if (data.region !== "EUW1") {
@@ -336,7 +264,6 @@ export async function syncTrackedPlayerById(playerId: string) {
     .from("tracked_players")
     .update({
       puuid: resolved.puuid,
-      summoner_id: resolved.summonerId ?? null,
       riot_data_updated_at: new Date().toISOString()
     })
     .eq("id", data.id);
@@ -345,54 +272,94 @@ export async function syncTrackedPlayerById(playerId: string) {
     return { updated: false, warning: updateError.message };
   }
 
-  const ensuredSummonerId = await ensureSummonerId(
-    data.id,
-    resolved.puuid
-  );
+  const player = { ...data, puuid: resolved.puuid };
+  const rankedResult = await ensureRankedCache(player, force);
+  const liveResult = await ensureLiveCache(player, force);
+  const wasAvgFresh =
+    player.avg_placement_updated_at &&
+    isFresh(player.avg_placement_updated_at, 15 * 60 * 1000);
+  const avgPlacement = await ensureAveragePlacement(player, force);
+
+  const avgStatus =
+    avgPlacement === null
+      ? "skipped"
+      : force || !wasAvgFresh
+        ? "updated"
+        : "cached";
 
   return {
     updated: true,
-    warning: resolved.warning ?? (ensuredSummonerId ? null : "Summoner not found.")
+    warning: resolved.warning ?? null,
+    ranked: rankedResult.ranked,
+    live: {
+      inGame: liveResult.inGame,
+      gameStartTime: liveResult.gameStartTime,
+      participantCount: liveResult.participantCount
+    },
+    avgPlacement,
+    statuses: {
+      ranked: rankedResult.status,
+      live: liveResult.status,
+      avgPlacement: avgStatus
+    }
   };
 }
 
+export async function syncPlayersBatch(limit = 10) {
+  const { data, error } = await supabaseAdmin
+    .from("tracked_players")
+    .select("id, riot_id")
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = data ?? [];
+  const results = [];
+
+  for (const row of rows) {
+    const result = await syncTrackedPlayerById(row.id, { force: true });
+    results.push({
+      id: row.id,
+      riot_id: row.riot_id,
+      status: result.updated
+        ? result.warning
+          ? "warning"
+          : "success"
+        : "failed",
+      warning: result.warning ?? null,
+      statuses: result.statuses ?? null
+    });
+  }
+
+  return { total: rows.length, results };
+}
+
 export async function getRankedInfo(
-  summonerId: string | null
-): Promise<RankedInfo> {
-  if (!summonerId) {
-    return null;
-  }
-
-  const cached = rankCache.get(summonerId);
+  player: TrackedPlayer,
+  force = false
+): Promise<{
+  ranked: RankedInfo;
+  rankIconUrl: string | null;
+  rankedQueue: string | null;
+  status: "updated" | "cached" | "skipped";
+}> {
+  const cached = rankCache.get(player.id);
   const now = Date.now();
-  if (cached && cached.expiresAt > now) {
-    return cached.value;
+  if (!force && cached && cached.expiresAt > now) {
+    return {
+      ranked: cached.value,
+      rankIconUrl: cached.value ? getRankIconUrl(cached.value.tier) : null,
+      rankedQueue: player.ranked_queue ?? null,
+      status: "cached"
+    };
   }
 
-  const entries = await getLeagueEntriesBySummonerId(summonerId);
-  if (!entries) {
-    return cached?.value ?? null;
-  }
-
-  const ranked = (entries ?? []).find(
-    (entry) => entry.queueType === "RANKED_TFT"
-  );
-
-  const tier = ranked?.tier ?? null;
-  const rank = ranked?.rank ?? null;
-  const leaguePoints = ranked?.leaguePoints ?? null;
-
-  if (!tier || !rank || leaguePoints === null) {
-    rankCache.set(summonerId, { value: null, expiresAt: now + rankTtlMs });
-    return null;
-  }
-
-  const result = {
-    tier,
-    rank,
-    leaguePoints
-  };
-  rankCache.set(summonerId, { value: result, expiresAt: now + rankTtlMs });
+  const result = await ensureRankedCache(player, force);
+  rankCache.set(player.id, { value: result.ranked, expiresAt: now + rankTtlMs });
   return result;
 }
 
@@ -402,6 +369,147 @@ function isFresh(timestamp: string | null, ttlMs: number) {
   }
   const last = new Date(timestamp).getTime();
   return Date.now() - last < ttlMs;
+}
+
+function getRankIconUrl(tier: string | null) {
+  if (!tier) {
+    return null;
+  }
+  const slug = tier.toLowerCase();
+  return `https://cdn.communitydragon.org/latest/tft/ranked-icons/${slug}.png`;
+}
+
+function pickRankedEntry(entries: Array<{ queueType: string }> | null) {
+  if (!entries) {
+    return null;
+  }
+  return (
+    entries.find((entry) => entry.queueType === "RANKED_TFT") ??
+    entries.find((entry) => entry.queueType === "RANKED_TFT_DOUBLE_UP") ??
+    entries.find((entry) => entry.queueType === "RANKED_TFT_TURBO") ??
+    null
+  );
+}
+
+async function ensureRankedCache(player: TrackedPlayer, force = false) {
+  if (player.ranked_updated_at && !force && isFresh(player.ranked_updated_at, rankTtlMs)) {
+    if (!player.ranked_tier || !player.ranked_rank || player.ranked_lp === null) {
+      return {
+        ranked: null,
+        rankIconUrl: null,
+        rankedQueue: player.ranked_queue ?? null,
+        status: "cached"
+      };
+    }
+
+    return {
+      ranked: {
+        tier: player.ranked_tier,
+        rank: player.ranked_rank,
+        leaguePoints: player.ranked_lp
+      },
+      rankIconUrl: getRankIconUrl(player.ranked_tier),
+      rankedQueue: player.ranked_queue ?? null,
+      status: "cached"
+    };
+  }
+
+  if (!player.puuid) {
+    return { ranked: null, rankIconUrl: null, rankedQueue: null, status: "skipped" };
+  }
+
+  const entries = await getLeagueEntriesByPuuid(player.puuid);
+  if (!entries) {
+    return {
+      ranked: null,
+      rankIconUrl: null,
+      rankedQueue: player.ranked_queue ?? null,
+      status: "skipped"
+    };
+  }
+
+  const rankedEntry = pickRankedEntry(entries);
+  const tier = rankedEntry?.tier ?? null;
+  const rank = rankedEntry?.rank ?? null;
+  const leaguePoints = rankedEntry?.leaguePoints ?? null;
+  const rankedQueue = rankedEntry?.queueType ?? null;
+
+  await supabaseAdmin
+    .from("tracked_players")
+    .update({
+      ranked_tier: tier,
+      ranked_rank: rank,
+      ranked_lp: leaguePoints,
+      ranked_queue: rankedQueue,
+      ranked_updated_at: new Date().toISOString(),
+      riot_data_updated_at: new Date().toISOString()
+    })
+    .eq("id", player.id);
+
+  if (!tier || !rank || leaguePoints === null) {
+    return { ranked: null, rankIconUrl: null, rankedQueue, status: "updated" };
+  }
+
+  return {
+    ranked: { tier, rank, leaguePoints },
+    rankIconUrl: getRankIconUrl(tier),
+    rankedQueue,
+    status: "updated"
+  };
+}
+
+async function ensureLiveCache(player: TrackedPlayer, force = false) {
+  if (player.live_updated_at && !force && isFresh(player.live_updated_at, liveTtlMs)) {
+    return {
+      inGame: Boolean(player.live_in_game),
+      gameStartTime: player.live_game_start_time ?? null,
+      participantCount: null,
+      usedCache: true,
+      status: "cached"
+    };
+  }
+
+  if (!player.puuid) {
+    return {
+      inGame: false,
+      gameStartTime: null,
+      participantCount: null,
+      usedCache: false,
+      status: "skipped"
+    };
+  }
+
+  const live = await getLiveGameByPuuid(player.puuid);
+  const inGame = Boolean(live);
+  const gameStartTime = live?.gameStartTime ?? null;
+  const participantCount = live?.participants?.length ?? null;
+
+  await supabaseAdmin
+    .from("tracked_players")
+    .update({
+      live_in_game: inGame,
+      live_game_start_time: gameStartTime,
+      live_updated_at: new Date().toISOString(),
+      riot_data_updated_at: new Date().toISOString()
+    })
+    .eq("id", player.id);
+
+  return {
+    inGame,
+    gameStartTime,
+    participantCount,
+    usedCache: false,
+    status: "updated"
+  };
+}
+
+function getRankSortKey(player: TrackedPlayer) {
+  const tier = player.ranked_tier ?? "";
+  const rank = player.ranked_rank ?? "";
+  const lp = player.ranked_lp ?? -1;
+  const tierScore = tierOrder[tier] ?? -1;
+  const divisionScore = divisionOrder[rank] ?? 0;
+  return { tierScore, divisionScore, lp };
 }
 
 export async function ensureAveragePlacement(
@@ -457,9 +565,7 @@ export async function ensureAveragePlacement(
 export async function getPlayerProfileBySlug(slugOrRiotId: string) {
   let { data } = await supabaseAdmin
     .from("tracked_players")
-    .select(
-      "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-    )
+    .select("*")
     .ilike("slug", slugOrRiotId)
     .maybeSingle();
 
@@ -468,9 +574,7 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     if (normalizedSlug !== slugOrRiotId) {
       const { data: slugMatch } = await supabaseAdmin
         .from("tracked_players")
-        .select(
-          "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-        )
+        .select("*")
         .eq("slug", normalizedSlug)
         .maybeSingle();
       data = slugMatch ?? data;
@@ -479,9 +583,7 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     if (!data) {
       const { data: riotIdMatch } = await supabaseAdmin
         .from("tracked_players")
-        .select(
-          "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-        )
+        .select("*")
         .ilike("riot_id", slugOrRiotId)
         .maybeSingle();
       data = riotIdMatch ?? data;
@@ -491,9 +593,7 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
   if (!data && !slugOrRiotId.includes("#")) {
     const { data: riotIdMatch } = await supabaseAdmin
       .from("tracked_players")
-      .select(
-        "id, riot_id, region, slug, is_active, puuid, summoner_id, avg_placement_10, avg_placement_updated_at, riot_data_updated_at, profile_image_url"
-      )
+      .select("*")
       .ilike("riot_id", `${slugOrRiotId}#%`)
       .maybeSingle();
     data = riotIdMatch ?? data;
@@ -509,62 +609,62 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     };
   }
 
-  const ensureResult = data.summoner_id
-    ? { summonerId: data.summoner_id, error: null }
-    : await ensureSummonerIdWithError(data.id, data.puuid);
-  const ensuredSummonerId = ensureResult.summonerId;
-
-  if (ensuredSummonerId && data.summoner_id !== ensuredSummonerId) {
-    data = { ...data, summoner_id: ensuredSummonerId };
-  }
-
-  const ranked = await getRankedInfo(ensuredSummonerId);
+  const rankedResult = await getRankedInfo(data);
+  const ranked = rankedResult.ranked;
   const avgPlacement = await ensureAveragePlacement(data);
-  const live = await getLiveGameStatus(data.puuid ?? null);
+  const live = await getLiveGameStatus(data);
   const recentMatches = await getRecentMatches(data.puuid ?? null, 10);
 
   return {
     player: data,
     ranked,
+    rankIconUrl: rankedResult.rankIconUrl,
+    rankedQueue: rankedResult.rankedQueue,
     avgPlacement,
     live,
-    recentMatches,
-    debugEnsuredSummonerId: ensuredSummonerId,
-    debugEnsureSummonerIdError: ensureResult.error
+    recentMatches
   };
 }
 
 export async function getLeaderboardData() {
   const { data } = await supabaseAdmin
     .from("tracked_players")
-    .select(
-      "id, riot_id, slug, is_active, puuid, avg_placement_10, avg_placement_updated_at"
-    )
+    .select("*")
     .eq("is_active", true)
     .not("puuid", "is", null);
 
-  const players = (data ?? []) as Array<{
-    id: string;
-    riot_id: string;
-    slug: string;
-    puuid: string | null;
-    avg_placement_10: number | null;
-    avg_placement_updated_at: string | null;
-  }>;
+  const players = (data ?? []) as TrackedPlayer[];
 
   const enriched = await Promise.all(
     players.map(async (player) => {
       const avgPlacement = await ensureAveragePlacement(player);
-      const live = await getLiveGameStatus(player.puuid ?? null);
-      return { ...player, avgPlacement, live };
+      const live = await getLiveGameStatus(player);
+      const rankedResult = await getRankedInfo(player);
+      return {
+        ...player,
+        avgPlacement,
+        live,
+        ranked: rankedResult.ranked,
+        rankIconUrl: rankedResult.rankIconUrl,
+        rankedQueue: rankedResult.rankedQueue
+      };
     })
   );
 
   const sorted = enriched.sort((a, b) => {
-    if (a.avgPlacement === null && b.avgPlacement === null) return 0;
-    if (a.avgPlacement === null) return 1;
-    if (b.avgPlacement === null) return -1;
-    return a.avgPlacement - b.avgPlacement;
+    const aKey = getRankSortKey(a);
+    const bKey = getRankSortKey(b);
+
+    if (aKey.tierScore !== bKey.tierScore) {
+      return bKey.tierScore - aKey.tierScore;
+    }
+    if (aKey.divisionScore !== bKey.divisionScore) {
+      return bKey.divisionScore - aKey.divisionScore;
+    }
+    if (aKey.lp !== bKey.lp) {
+      return bKey.lp - aKey.lp;
+    }
+    return a.riot_id.localeCompare(b.riot_id);
   });
 
   return sorted;
@@ -649,21 +749,18 @@ export async function getRecentMatches(
 }
 
 export async function getLiveGameStatus(
-  puuid: string | null
+  player: TrackedPlayer,
+  force = false
 ): Promise<LiveGameStatus> {
-  if (!puuid) {
-    return { inGame: false, gameStartTime: null, participantCount: null };
-  }
-
-  const live = await getLiveGameByPuuid(puuid);
-  if (!live) {
+  const cached = await ensureLiveCache(player, force);
+  if (!cached.inGame) {
     return { inGame: false, gameStartTime: null, participantCount: null };
   }
 
   return {
     inGame: true,
-    gameStartTime: live.gameStartTime ?? null,
-    participantCount: live.participants?.length ?? null
+    gameStartTime: cached.gameStartTime,
+    participantCount: cached.participantCount ?? null
   };
 }
 

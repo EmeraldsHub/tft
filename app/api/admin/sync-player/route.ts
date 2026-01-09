@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await syncTrackedPlayerById(id);
+    const result = await syncTrackedPlayerById(id, { force: true });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(
