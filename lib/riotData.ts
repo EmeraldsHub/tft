@@ -641,8 +641,7 @@ export async function getLeaderboardData() {
   const { data } = await supabaseAdmin
     .from("tracked_players")
     .select("*")
-    .eq("is_active", true)
-    .not("puuid", "is", null);
+    .eq("is_active", true);
 
   const players = (data ?? []) as TrackedPlayer[];
 
