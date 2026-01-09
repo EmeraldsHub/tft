@@ -24,7 +24,8 @@ async function riotFetch<T>(url: string, options: FetchOptions = {}) {
     try {
       response = await fetch(url, {
         headers: {
-          "X-Riot-Token": apiKey
+          "X-Riot-Token": apiKey,
+          "User-Agent": "tft-italia/1.0 (contact: admin@tft-italia.it)"
         },
         cache: "no-store"
       });
