@@ -46,7 +46,12 @@ export default async function PlayerPage({
     `${baseUrl}/api/player/${encodeURIComponent(params.slug)}${refreshQuery}`,
     {
       cache: "no-store",
-      headers: refreshQuery ? { "x-bypass-cache": "1" } : undefined
+      headers: refreshQuery
+        ? {
+            "x-bypass-cache": "1",
+            cookie: headerList.get("cookie") ?? ""
+          }
+        : undefined
     }
   )
     .then(async (response) =>
