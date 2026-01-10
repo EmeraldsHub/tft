@@ -1,8 +1,9 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { syncPlayersBatch } from "@/lib/riotData";
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache } from "@/lib/playerCache";
+import { syncPlayersBatch } from "@/lib/riotData";
 import { NextResponse } from "next/server";
 
 function ensureAdmin(request: Request) {
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
   try {
     const result = await syncPlayersBatch(limit);
     invalidateLeaderboardCache();
+    invalidateAllPlayerCache();
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

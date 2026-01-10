@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache } from "@/lib/playerCache";
 import { listTrackedPlayers } from "@/lib/riotData";
 import {
   getLeagueEntriesByPuuid,
@@ -147,6 +148,7 @@ export async function POST(request: Request) {
   }
 
   invalidateLeaderboardCache();
+  invalidateAllPlayerCache();
   return NextResponse.json({
     total: targetPlayers.length,
     results

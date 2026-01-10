@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache, invalidatePlayerCache } from "@/lib/playerCache";
 import { createTrackedPlayer, listTrackedPlayers } from "@/lib/riotData";
 import { slugifyRiotId } from "@/lib/slugify";
 import { NextResponse } from "next/server";
@@ -60,6 +61,13 @@ export async function POST(request: Request) {
       profileImageUrl
     });
     invalidateLeaderboardCache();
+    const maybeSlug = (result as { slug?: unknown } | null)?.slug;
+    const slugValue = typeof maybeSlug === "string" ? maybeSlug : null;
+    if (slugValue) {
+      invalidatePlayerCache(slugValue);
+    } else {
+      invalidateAllPlayerCache();
+    }
     return NextResponse.json({ result, warning });
   } catch (err) {
     return NextResponse.json(

@@ -2,7 +2,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache, invalidatePlayerCache } from "@/lib/playerCache";
 import { syncTrackedPlayerById } from "@/lib/riotData";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 
 function ensureAdmin(request: Request) {
@@ -32,6 +34,16 @@ export async function POST(request: Request) {
   try {
     const result = await syncTrackedPlayerById(id, { force: true });
     invalidateLeaderboardCache();
+    const { data: playerRow } = await supabaseAdmin
+      .from("tracked_players")
+      .select("slug")
+      .eq("id", id)
+      .maybeSingle();
+    if (playerRow?.slug) {
+      invalidatePlayerCache(playerRow.slug);
+    } else {
+      invalidateAllPlayerCache();
+    }
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

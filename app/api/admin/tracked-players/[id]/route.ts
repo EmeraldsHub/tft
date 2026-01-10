@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache, invalidatePlayerCache } from "@/lib/playerCache";
 import { deleteTrackedPlayer, updateTrackedPlayer } from "@/lib/riotData";
 import { NextResponse } from "next/server";
 
@@ -25,6 +26,13 @@ export async function PATCH(
   try {
     const result = await updateTrackedPlayer(params.id, body);
     invalidateLeaderboardCache();
+    const maybeSlug = (result as { slug?: unknown } | null)?.slug;
+    const slugValue = typeof maybeSlug === "string" ? maybeSlug : null;
+    if (slugValue) {
+      invalidatePlayerCache(slugValue);
+    } else {
+      invalidateAllPlayerCache();
+    }
     return NextResponse.json({ result });
   } catch (err) {
     return NextResponse.json(
@@ -45,6 +53,7 @@ export async function DELETE(
   try {
     await deleteTrackedPlayer(params.id);
     invalidateLeaderboardCache();
+    invalidateAllPlayerCache();
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Delete failed." },

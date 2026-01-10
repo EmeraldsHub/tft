@@ -1,7 +1,17 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { getPlayerProfileBySlug } from "@/lib/riotData";
+import {
+  getRecentMatchesFromCache,
+  getTrackedPlayerBySlug,
+  RankedInfo
+} from "@/lib/riotData";
+import {
+  getPlayerCache,
+  setPlayerCache,
+  shouldTriggerPlayerRefresh,
+  invalidatePlayerCache
+} from "@/lib/playerCache";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getChampionIconUrl,
@@ -9,6 +19,7 @@ import {
   getTftTraitIconUrl,
   sanitizeIconUrl
 } from "@/lib/cdragonStatic";
+import { syncTrackedPlayerById } from "@/lib/riotData";
 import { NextResponse } from "next/server";
 
 type PlayerPreview = {
@@ -36,6 +47,25 @@ type PlayerPreview = {
   }>;
   riotIdGameName?: string | null;
   riotIdTagline?: string | null;
+};
+
+type PlayerResponse = {
+  player: Record<string, unknown> | null;
+  ranked: RankedInfo | null;
+  rankIconUrl: string | null;
+  rankedQueue: string | null;
+  avgPlacement: number | null;
+  live: { inGame: boolean; gameStartTime: number | null; participantCount: number | null };
+  recentMatches: Array<{
+    matchId: string;
+    placement: number | null;
+    gameStartTime: number | null;
+    gameDateTime: number | null;
+    preview?: PlayerPreview | null;
+  }>;
+  needsRankedRefresh?: boolean;
+  needsMatchesRefresh?: boolean;
+  needsProfileRefresh?: boolean;
 };
 
 const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
@@ -84,9 +114,11 @@ async function hydratePreviewIcons(
   };
 }
 
-function ensureAdmin(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  return cookie.includes("admin_session=authenticated");
+function getRankIconUrl(tier: string | null) {
+  if (!tier) {
+    return null;
+  }
+  return `https://cdn.communitydragon.org/latest/tft/ranked-icons/${tier.toLowerCase()}.png`;
 }
 
 export async function GET(
@@ -94,14 +126,71 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const payload = await getPlayerProfileBySlug(params.slug);
+    const slug = params.slug;
+    const cached = getPlayerCache<PlayerResponse>(slug);
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "x-player-cache": "HIT"
+        }
+      });
+    }
 
-    if (
-      payload.player &&
-      payload.player.puuid &&
-      payload.recentMatches.length > 0
-    ) {
-      const matchIds = payload.recentMatches.map((match) => match.matchId);
+    const startedAt = Date.now();
+    const dbStart = Date.now();
+    const player = await getTrackedPlayerBySlug(slug);
+    const dbMs = Date.now() - dbStart;
+
+    if (!player || !player.is_active) {
+      const empty: PlayerResponse = {
+        player: null,
+        ranked: null,
+        rankIconUrl: null,
+        rankedQueue: null,
+        avgPlacement: null,
+        live: { inGame: false, gameStartTime: null, participantCount: null },
+        recentMatches: []
+      };
+      setPlayerCache(slug, empty);
+      return NextResponse.json(empty, {
+        headers: { "Cache-Control": "private, max-age=0, must-revalidate" }
+      });
+    }
+
+    const ranked =
+      player.ranked_tier && player.ranked_rank && player.ranked_lp !== null
+        ? {
+            tier: player.ranked_tier,
+            rank: player.ranked_rank,
+            leaguePoints: player.ranked_lp
+          }
+        : null;
+    const avgPlacement = player.avg_placement_10 ?? null;
+    const live = {
+      inGame: Boolean(player.live_in_game),
+      gameStartTime: player.live_game_start_time ?? null,
+      participantCount: null
+    };
+
+    const recentMatches =
+      player.puuid ? await getRecentMatchesFromCache(player.puuid, 10) : [];
+
+    const payload: PlayerResponse = {
+      player,
+      ranked,
+      rankIconUrl: ranked ? getRankIconUrl(ranked.tier) : null,
+      rankedQueue: player.ranked_queue ?? null,
+      avgPlacement,
+      live,
+      recentMatches,
+      needsRankedRefresh: ranked === null,
+      needsMatchesRefresh: recentMatches.length === 0,
+      needsProfileRefresh: !player.puuid
+    };
+
+    if (player.puuid && recentMatches.length > 0) {
+      const matchIds = recentMatches.map((match) => match.matchId);
       const { data: cacheRows } = await supabaseAdmin
         .from("tft_match_cache")
         .select("match_id, player_previews")
@@ -115,9 +204,9 @@ export async function GET(
         );
       });
 
-      const puuid = payload.player.puuid;
+      const puuid = player.puuid;
       payload.recentMatches = await Promise.all(
-        payload.recentMatches.map(async (match) => {
+        recentMatches.map(async (match) => {
           const previews = previewMap.get(match.matchId);
           const preview = previews ? previews[puuid] ?? null : null;
           if (!preview) {
@@ -132,7 +221,39 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(payload);
+    if (process.env.NODE_ENV !== "production") {
+      console.info(
+        "[player] slug=%s db=%dms total=%dms",
+        slug,
+        dbMs,
+        Date.now() - startedAt
+      );
+    }
+
+    const shouldRefresh =
+      payload.needsRankedRefresh ||
+      payload.needsMatchesRefresh ||
+      payload.needsProfileRefresh;
+    if (shouldRefresh && shouldTriggerPlayerRefresh(slug, 5 * 60_000)) {
+      void (async () => {
+        try {
+          await syncTrackedPlayerById(player.id, { force: true });
+          invalidatePlayerCache(slug);
+        } catch (err) {
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[player] refresh skipped", err instanceof Error ? err.message : err);
+          }
+        }
+      })();
+    }
+
+    setPlayerCache(slug, payload);
+    return NextResponse.json(payload, {
+      headers: {
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "x-player-cache": "MISS"
+      }
+    });
   } catch (error) {
     console.error("[api/player] failed", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

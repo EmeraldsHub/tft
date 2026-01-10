@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { invalidateAllPlayerCache } from "@/lib/playerCache";
 import { NextResponse } from "next/server";
 
 function ensureAdmin(request: Request) {
@@ -15,5 +16,6 @@ export async function POST(request: Request) {
   }
 
   invalidateLeaderboardCache();
+  invalidateAllPlayerCache();
   return NextResponse.json({ ok: true });
 }

@@ -589,6 +589,35 @@ export async function ensureAveragePlacement(
 }
 
 export async function getPlayerProfileBySlug(slugOrRiotId: string) {
+  const data = await getTrackedPlayerBySlug(slugOrRiotId);
+  if (!data || !data.is_active) {
+    return {
+      player: null,
+      ranked: null,
+      avgPlacement: null,
+      live: { inGame: false, gameStartTime: null, participantCount: null },
+      recentMatches: []
+    };
+  }
+
+  const rankedResult = await getRankedInfo(data);
+  const ranked = rankedResult.ranked;
+  const avgPlacement = await ensureAveragePlacement(data);
+  const live = await getLiveGameStatus(data);
+  const recentMatches = await getRecentMatches(data.puuid ?? null, 10);
+
+  return {
+    player: data,
+    ranked,
+    rankIconUrl: rankedResult.rankIconUrl,
+    rankedQueue: rankedResult.rankedQueue,
+    avgPlacement,
+    live,
+    recentMatches
+  };
+}
+
+export async function getTrackedPlayerBySlug(slugOrRiotId: string) {
   let { data } = await supabaseAdmin
     .from("tracked_players")
     .select("*")
@@ -625,31 +654,7 @@ export async function getPlayerProfileBySlug(slugOrRiotId: string) {
     data = riotIdMatch ?? data;
   }
 
-  if (!data || !data.is_active) {
-    return {
-      player: null,
-      ranked: null,
-      avgPlacement: null,
-      live: { inGame: false, gameStartTime: null, participantCount: null },
-      recentMatches: []
-    };
-  }
-
-  const rankedResult = await getRankedInfo(data);
-  const ranked = rankedResult.ranked;
-  const avgPlacement = await ensureAveragePlacement(data);
-  const live = await getLiveGameStatus(data);
-  const recentMatches = await getRecentMatches(data.puuid ?? null, 10);
-
-  return {
-    player: data,
-    ranked,
-    rankIconUrl: rankedResult.rankIconUrl,
-    rankedQueue: rankedResult.rankedQueue,
-    avgPlacement,
-    live,
-    recentMatches
-  };
+  return data ?? null;
 }
 
 export async function getLeaderboardData() {
@@ -833,7 +838,7 @@ type CachedMatchRow = {
   player_previews: Record<string, CachedPreview> | null;
 };
 
-async function getRecentMatchesFromCache(
+export async function getRecentMatchesFromCache(
   puuid: string,
   count: number
 ): Promise<MatchSummary[]> {
