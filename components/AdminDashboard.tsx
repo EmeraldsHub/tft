@@ -162,6 +162,41 @@ export function AdminDashboard() {
     await loadPlayers();
   };
 
+  const syncAllPlayers = async () => {
+    const limit = players.length;
+    if (limit === 0) {
+      setStatus("Nessun player da sincronizzare.");
+      return;
+    }
+
+    const response = await fetch("/api/admin/sync-players", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit })
+    });
+
+    const data = (await response.json()) as {
+      total?: number;
+      results?: Array<{
+        id: string;
+        riot_id: string;
+        status: string;
+        warning?: string | null;
+      }>;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      setStatus(data.error ?? "Errore durante il sync.");
+      return;
+    }
+
+    setStatus(
+      `Sync completo: ${data.total ?? limit} player processati.`
+    );
+    await loadPlayers();
+  };
+
   const syncLeaderboard = async () => {
     const response = await fetch("/api/admin/sync-leaderboard", {
       method: "POST",
@@ -259,6 +294,13 @@ export function AdminDashboard() {
             className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
           >
             Batch sync
+          </button>
+          <button
+            type="button"
+            onClick={syncAllPlayers}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:border-tft-accent hover:text-tft-accent"
+          >
+            Sync all
           </button>
           <button
             type="button"
