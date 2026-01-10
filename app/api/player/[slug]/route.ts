@@ -63,12 +63,32 @@ type PlayerResponse = {
     gameDateTime: number | null;
     preview?: PlayerPreview | null;
   }>;
+  favoriteUnit: {
+    characterId: string;
+    champIconUrl: string | null;
+    count: number;
+  } | null;
+  favoriteItems: Array<{
+    itemName: string;
+    itemIconUrl: string | null;
+    count: number;
+  }>;
+  favoriteTraits: Array<{
+    name: string;
+    iconUrl: string | null;
+    count: number;
+  }>;
   needsRankedRefresh?: boolean;
   needsMatchesRefresh?: boolean;
   needsProfileRefresh?: boolean;
 };
 
 const UNKNOWN_UNIT_ICON = "/icons/unknown-unit.png";
+type FavoriteUnit = {
+  characterId: string;
+  champIconUrl: string | null;
+  count: number;
+};
 
 async function hydratePreviewIcons(
   preview: PlayerPreview
@@ -121,6 +141,22 @@ function getRankIconUrl(tier: string | null) {
   return `https://cdn.communitydragon.org/latest/tft/ranked-icons/${tier.toLowerCase()}.png`;
 }
 
+function pickFavoriteUnit(
+  counts: Map<string, { count: number; champIconUrl: string | null }>
+): FavoriteUnit | null {
+  let favorite: FavoriteUnit | null = null;
+  counts.forEach((value, characterId) => {
+    if (!favorite || value.count > favorite.count) {
+      favorite = {
+        characterId,
+        champIconUrl: value.champIconUrl,
+        count: value.count
+      };
+    }
+  });
+  return favorite;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { slug: string } }
@@ -150,7 +186,10 @@ export async function GET(
         rankedQueue: null,
         avgPlacement: null,
         live: { inGame: false, gameStartTime: null, participantCount: null },
-        recentMatches: []
+        recentMatches: [],
+        favoriteUnit: null,
+        favoriteItems: [],
+        favoriteTraits: []
       };
       setPlayerCache(slug, empty);
       return NextResponse.json(empty, {
@@ -179,11 +218,14 @@ export async function GET(
     const payload: PlayerResponse = {
       player,
       ranked,
-      rankIconUrl: ranked ? getRankIconUrl(ranked.tier) : null,
+      rankIconUrl: ranked ? getRankIconUrl(ranked.tier) : "/ranks/UNRANKED.png",
       rankedQueue: player.ranked_queue ?? null,
       avgPlacement,
       live,
       recentMatches,
+      favoriteUnit: null,
+      favoriteItems: [],
+      favoriteTraits: [],
       needsRankedRefresh: ranked === null,
       needsMatchesRefresh: recentMatches.length === 0,
       needsProfileRefresh: !player.puuid
@@ -193,14 +235,21 @@ export async function GET(
       const matchIds = recentMatches.map((match) => match.matchId);
       const { data: cacheRows } = await supabaseAdmin
         .from("tft_match_cache")
-        .select("match_id, player_previews")
+        .select("match_id, player_previews, queue_id, data")
         .in("match_id", matchIds);
 
       const previewMap = new Map<string, Record<string, PlayerPreview> | null>();
+      const queueMap = new Map<string, number | null>();
+      const dataMap = new Map<string, { info?: { queue_id?: number | null } } | null>();
       (cacheRows ?? []).forEach((row) => {
         previewMap.set(
           row.match_id,
           (row.player_previews as Record<string, PlayerPreview> | null) ?? null
+        );
+        queueMap.set(row.match_id, row.queue_id ?? null);
+        dataMap.set(
+          row.match_id,
+          (row.data as { info?: { queue_id?: number | null } } | null) ?? null
         );
       });
 
@@ -219,6 +268,119 @@ export async function GET(
           };
         })
       );
+
+      const rankedQueueIds = new Set([1100]);
+      const unitCounts = new Map<string, { count: number; champIconUrl: string | null }>();
+      const itemCounts = new Map<string, { count: number; itemIconUrl: string | null }>();
+      const traitCounts = new Map<string, { count: number; iconUrl: string | null }>();
+      payload.recentMatches.forEach((match) => {
+        const queueId =
+          queueMap.get(match.matchId) ??
+          dataMap.get(match.matchId)?.info?.queue_id ??
+          null;
+        if (queueId !== null && !rankedQueueIds.has(queueId)) {
+          return;
+        }
+        const preview = match.preview ?? null;
+        const units = Array.isArray(preview?.units) ? preview.units : [];
+        const topTraits = Array.isArray(preview?.topTraits) ? preview.topTraits : [];
+        units.forEach((unit) => {
+          const characterId = unit.character_id?.trim();
+          if (!characterId) {
+            return;
+          }
+          const existing = unitCounts.get(characterId);
+          const champIconUrl = unit.champIconUrl ?? null;
+          if (existing) {
+            unitCounts.set(characterId, {
+              count: existing.count + 1,
+              champIconUrl: existing.champIconUrl ?? champIconUrl
+            });
+          } else {
+            unitCounts.set(characterId, { count: 1, champIconUrl });
+          }
+
+          const itemNames = Array.isArray(unit.itemNames) ? unit.itemNames : [];
+          const itemIconUrls = Array.isArray(unit.itemIconUrls)
+            ? unit.itemIconUrls
+            : [];
+          itemNames.forEach((itemName, index) => {
+            const name = itemName?.trim();
+            if (!name) {
+              return;
+            }
+            const iconUrl = itemIconUrls[index] ?? null;
+            const existingItem = itemCounts.get(name);
+            if (existingItem) {
+              itemCounts.set(name, {
+                count: existingItem.count + 1,
+                itemIconUrl: existingItem.itemIconUrl ?? iconUrl
+              });
+            } else {
+              itemCounts.set(name, { count: 1, itemIconUrl: iconUrl });
+            }
+          });
+        });
+
+        topTraits.forEach((trait) => {
+          const name = trait.name?.trim();
+          if (!name) {
+            return;
+          }
+          const iconUrl = trait.iconUrl ?? null;
+          const existingTrait = traitCounts.get(name);
+          if (existingTrait) {
+            traitCounts.set(name, {
+              count: existingTrait.count + 1,
+              iconUrl: existingTrait.iconUrl ?? iconUrl
+            });
+          } else {
+            traitCounts.set(name, { count: 1, iconUrl });
+          }
+        });
+      });
+
+      let favorite = pickFavoriteUnit(unitCounts);
+      if (favorite && !favorite.champIconUrl) {
+        favorite.champIconUrl = await getChampionIconUrl(favorite.characterId);
+      }
+      payload.favoriteUnit = favorite;
+
+      const itemEntries = Array.from(itemCounts.entries())
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 3);
+      const favoriteItems = await Promise.all(
+        itemEntries.map(async ([itemName, meta]) => {
+          let itemIconUrl = sanitizeIconUrl(meta.itemIconUrl ?? null);
+          if (!itemIconUrl) {
+            itemIconUrl = sanitizeIconUrl(await getItemIconUrl(itemName));
+          }
+          return {
+            itemName,
+            itemIconUrl,
+            count: meta.count
+          };
+        })
+      );
+      payload.favoriteItems = favoriteItems;
+
+      const traitEntries = Array.from(traitCounts.entries())
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 3);
+      const favoriteTraits = await Promise.all(
+        traitEntries.map(async ([name, meta]) => {
+          let iconUrl = sanitizeIconUrl(meta.iconUrl ?? null);
+          if (!iconUrl) {
+            iconUrl = sanitizeIconUrl(await getTftTraitIconUrl(name));
+          }
+          return {
+            name,
+            iconUrl,
+            count: meta.count
+          };
+        })
+      );
+      payload.favoriteTraits = favoriteTraits;
     }
 
     if (process.env.NODE_ENV !== "production") {

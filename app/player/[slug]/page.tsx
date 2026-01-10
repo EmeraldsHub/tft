@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Container } from "@/components/ui/Container";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Stat } from "@/components/ui/Stat";
+import Image from "next/image";
 import { headers } from "next/headers";
 
 interface PlayerPageProps {
@@ -61,6 +62,21 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           gameStartTime: number | null;
           participantCount: number | null;
         };
+        favoriteUnit: {
+          characterId: string;
+          champIconUrl: string | null;
+          count: number;
+        } | null;
+        favoriteItems: Array<{
+          itemName: string;
+          itemIconUrl: string | null;
+          count: number;
+        }>;
+        favoriteTraits: Array<{
+          name: string;
+          iconUrl: string | null;
+          count: number;
+        }>;
             recentMatches: Array<{
               matchId: string;
               placement: number | null;
@@ -94,7 +110,10 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
         live: { inGame: false, gameStartTime: null, participantCount: null },
         recentMatches: [],
         rankIconUrl: null,
-        rankedQueue: null
+        rankedQueue: null,
+        favoriteUnit: null,
+        favoriteItems: [],
+        favoriteTraits: []
       }
     )
     .catch(() => ({
@@ -102,7 +121,10 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       ranked: null,
       avgPlacement: null,
       live: { inGame: false, gameStartTime: null, participantCount: null },
-      recentMatches: []
+      recentMatches: [],
+      favoriteUnit: null,
+      favoriteItems: [],
+      favoriteTraits: []
     }));
 
   if (!payload.player) {
@@ -120,6 +142,24 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
   const rankedInfo = payload.ranked;
   const avgPlacement = payload.avgPlacement;
   const liveStatus = payload.live;
+  const favoriteUnit = payload.favoriteUnit;
+  const favoriteItems = payload.favoriteItems ?? [];
+  const favoriteTraits = payload.favoriteTraits ?? [];
+  const formatTraitLabel = (name: string) =>
+    name
+      .replace(/^tft\d+[^a-z0-9]*/i, "")
+      .replace(/^tft[^a-z0-9]*/i, "")
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .trim();
+  const favoriteUnitLabel = favoriteUnit?.characterId
+    ? favoriteUnit.characterId
+        .replace(/^tft/i, "")
+        .replace(/^[^a-z]+/i, "")
+        .replace(/_/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .trim()
+    : null;
 
   const liveStart = liveStatus.inGame && liveStatus.gameStartTime
     ? new Date(liveStatus.gameStartTime).toLocaleTimeString("it-IT", {
@@ -235,26 +275,94 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
               <Card>
                 <CardContent>
                   <Stat
-                    label="Last updated"
-                    value={lastUpdatedLabel}
+                    label="Favorite unit"
+                    value={favoriteUnitLabel ?? "—"}
+                    helper={
+                      favoriteUnit
+                        ? `Most played in last 10 ranked matches (${favoriteUnit.count}x).`
+                        : "Not enough ranked match data yet."
+                    }
                   />
+                  {favoriteUnit?.champIconUrl ? (
+                    <div className="mt-3 flex items-center">
+                      <Image
+                        src={favoriteUnit.champIconUrl}
+                        alt={favoriteUnit.characterId}
+                        width={48}
+                        height={48}
+                        className="rounded border border-slate-800 bg-slate-950"
+                      />
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <Stat
+                    label="Favorite items"
+                    value={favoriteItems.length > 0 ? "Top 3 items" : "—"}
+                    helper={
+                      favoriteItems.length > 0
+                        ? "Most played in last 10 ranked matches."
+                        : "Not enough ranked match data yet."
+                    }
+                  />
+                  {favoriteItems.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {favoriteItems.map((item) =>
+                        item.itemIconUrl ? (
+                          <div key={item.itemName} className="flex items-center gap-1">
+                            <Image
+                              src={item.itemIconUrl}
+                              alt={item.itemName}
+                              title={item.itemName}
+                              width={28}
+                              height={28}
+                              className="rounded border border-slate-800 bg-slate-950"
+                            />
+                            <span className="text-xs text-slate-400">
+                              {item.count}x
+                            </span>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
 
             <Card>
               <CardHeader>
-                <CardTitle>Live game</CardTitle>
+                <CardTitle>Favorite traits</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-slate-300">
-                {liveStatus.inGame ? (
-                  <div className="space-y-2">
-                    <p className="text-white">In game</p>
-                    <p>Start: {liveStart ?? "—"}</p>
-                    <p>Participants: {liveStatus.participantCount ?? "—"}</p>
+                {favoriteTraits.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {favoriteTraits.map((trait) =>
+                      trait.iconUrl ? (
+                        <div key={trait.name} className="flex items-center gap-2">
+                          <Image
+                            src={trait.iconUrl}
+                            alt={trait.name}
+                            title={trait.name}
+                            width={24}
+                            height={24}
+                            className="rounded border border-slate-800 bg-slate-950"
+                          />
+                          <span className="text-xs text-slate-300">
+                            {formatTraitLabel(trait.name)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span key={trait.name} className="text-xs text-slate-400">
+                          {formatTraitLabel(trait.name)}
+                        </span>
+                      )
+                    )}
                   </div>
                 ) : (
-                  <p>Not in game</p>
+                  <p>Not enough ranked match data yet.</p>
                 )}
               </CardContent>
             </Card>

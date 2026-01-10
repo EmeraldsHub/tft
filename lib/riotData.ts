@@ -319,6 +319,164 @@ export async function syncTrackedPlayerById(
   };
 }
 
+export async function cacheRecentMatchesForPuuid(
+  puuid: string,
+  count = 10
+) {
+  const matchIds = (await getMatchIdsByPuuid(puuid, count)) ?? [];
+  if (matchIds.length === 0) {
+    return { cached: 0, total: 0 };
+  }
+
+  const { data: cachedRows } = await supabaseAdmin
+    .from("tft_match_cache")
+    .select("match_id")
+    .in("match_id", matchIds);
+
+  const cachedIds = new Set((cachedRows ?? []).map((row) => row.match_id));
+  const missingIds = matchIds.filter((matchId) => !cachedIds.has(matchId));
+
+  if (missingIds.length === 0) {
+    return { cached: matchIds.length, total: matchIds.length };
+  }
+
+  let cached = cachedIds.size;
+  for (const matchId of missingIds) {
+    const match = await getMatchById(matchId);
+    if (!match) {
+      continue;
+    }
+    const info = match.info;
+    const participant =
+      info?.participants?.find((entry) => entry.puuid === puuid) ?? null;
+    const preview = participant
+      ? buildPlayerPreviewFromMatchParticipant(participant, puuid)
+      : null;
+    const gameMs =
+      typeof info?.game_datetime === "number" ? info.game_datetime : null;
+    const gameDatetimeISO = gameMs
+      ? new Date(gameMs).toISOString()
+      : new Date().toISOString();
+    const queueId =
+      (info as { queue_id?: number | null } | null)?.queue_id ?? null;
+    await supabaseAdmin
+      .from("tft_match_cache")
+      .upsert(
+        {
+          match_id: matchId,
+          region: "EUROPE",
+          game_datetime: gameDatetimeISO,
+          queue_id: queueId,
+          data: match,
+          player_previews: preview ? { [puuid]: preview } : null,
+          fetched_at: new Date().toISOString()
+        },
+        { onConflict: "match_id" }
+      );
+    cached += 1;
+  }
+
+  return { cached, total: matchIds.length };
+}
+
+type PreviewUnit = {
+  character_id: string;
+  tier: number;
+  itemNames: string[];
+  champIconUrl: string | null;
+  itemIconUrls: Array<string | null>;
+};
+
+type PreviewTrait = {
+  name: string;
+  num_units: number;
+  style: number;
+  tier_current: number;
+  tier_total: number;
+};
+
+type PreviewTopTrait = {
+  name: string;
+  num_units: number;
+  style: number;
+  iconUrl: string | null;
+};
+
+type PlayerPreview = {
+  puuid: string;
+  placement: number | null;
+  level: number | null;
+  units: PreviewUnit[];
+  traits: PreviewTrait[];
+  topTraits: PreviewTopTrait[];
+};
+
+type MatchParticipant = {
+  puuid?: string | null;
+  placement?: number | null;
+  level?: number | null;
+  units?: Array<{
+    character_id?: string | null;
+    tier?: number | null;
+    itemNames?: string[] | null;
+  }> | null;
+  traits?: Array<{
+    name?: string | null;
+    num_units?: number | null;
+    style?: number | null;
+    tier_current?: number | null;
+    tier_total?: number | null;
+  }> | null;
+};
+
+function buildPlayerPreviewFromMatchParticipant(
+  participant: MatchParticipant,
+  puuid: string
+): PlayerPreview {
+  const units = Array.isArray(participant.units)
+    ? participant.units.map((unit) => ({
+        character_id: unit.character_id ?? "",
+        tier: typeof unit.tier === "number" ? unit.tier : 0,
+        itemNames: Array.isArray(unit.itemNames) ? unit.itemNames : [],
+        champIconUrl: null,
+        itemIconUrls: []
+      }))
+    : [];
+  const traits = Array.isArray(participant.traits)
+    ? participant.traits.map((trait) => ({
+        name: trait.name ?? "",
+        num_units: trait.num_units ?? 0,
+        style: trait.style ?? 0,
+        tier_current: trait.tier_current ?? 0,
+        tier_total: trait.tier_total ?? 0
+      }))
+    : [];
+  const topTraits = traits
+    .filter((trait) => trait.style > 0 || trait.tier_current > 0)
+    .sort((a, b) => {
+      const styleDiff = b.style - a.style;
+      if (styleDiff !== 0) {
+        return styleDiff;
+      }
+      return b.num_units - a.num_units;
+    })
+    .slice(0, 5)
+    .map((trait) => ({
+      name: trait.name,
+      num_units: trait.num_units,
+      style: trait.style,
+      iconUrl: null
+    }));
+  return {
+    puuid,
+    placement: participant.placement ?? null,
+    level: typeof participant.level === "number" ? participant.level : null,
+    units,
+    traits,
+    topTraits
+  };
+}
+
 export async function syncPlayersBatch(limit = 10) {
   const { data, error } = await supabaseAdmin
     .from("tracked_players")
@@ -849,15 +1007,46 @@ export async function getRecentMatchesFromCache(
     .order("game_datetime", { ascending: false })
     .limit(count);
 
-  if (error || !Array.isArray(data)) {
+  const rows = Array.isArray(data) && !error ? (data as CachedMatchRow[]) : [];
+  if (rows.length > 0) {
+    return rows.map((row) => {
+      const preview = row.player_previews?.[puuid] ?? null;
+      const placement =
+        typeof preview?.placement === "number" ? preview.placement : null;
+      const info = row.data?.info;
+      return {
+        matchId: row.match_id,
+        placement,
+        gameStartTime: info?.game_start_time ?? null,
+        gameDateTime: row.game_datetime
+          ? new Date(row.game_datetime).getTime()
+          : info?.game_datetime ?? null
+      };
+    });
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+    .from("tft_match_cache")
+    .select("match_id, game_datetime, data, player_previews")
+    .contains("data->info->participants", [{ puuid }])
+    .order("game_datetime", { ascending: false })
+    .limit(count);
+
+  if (fallbackError || !Array.isArray(fallbackData)) {
     return [];
   }
 
-  return (data as CachedMatchRow[]).map((row) => {
+  return (fallbackData as CachedMatchRow[]).map((row) => {
     const preview = row.player_previews?.[puuid] ?? null;
-    const placement =
-      typeof preview?.placement === "number" ? preview.placement : null;
     const info = row.data?.info;
+    const participants = Array.isArray(info?.participants)
+      ? info?.participants
+      : [];
+    const placement =
+      typeof preview?.placement === "number"
+        ? preview.placement
+        : participants.find((participant) => participant.puuid === puuid)
+            ?.placement ?? null;
     return {
       matchId: row.match_id,
       placement,
