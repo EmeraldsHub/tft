@@ -11,6 +11,16 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+let rateLimited = false;
+
+export function resetRiotRateLimitFlag() {
+  rateLimited = false;
+}
+
+export function getRiotRateLimitFlag() {
+  return rateLimited;
+}
+
 async function riotFetch<T>(url: string, options: FetchOptions = {}) {
   const maxAttempts = 3;
 
@@ -33,6 +43,7 @@ async function riotFetch<T>(url: string, options: FetchOptions = {}) {
     }
 
     if (response.status === 429) {
+      rateLimited = true;
       const retryAfterHeader = response.headers.get("retry-after");
       const retryAfter = retryAfterHeader ? Number(retryAfterHeader) * 1000 : 0;
       const backoff = retryAfter || 500 * attempt;

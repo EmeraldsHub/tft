@@ -130,6 +130,7 @@ export function AdminDashboard() {
   };
 
   const syncPlayer = async (player: TrackedPlayer) => {
+    setStatus("Sync in corso...");
     try {
       const response = await adminFetch("/api/admin/sync-player", {
         method: "POST",
@@ -147,10 +148,21 @@ export function AdminDashboard() {
         return;
       }
 
+      const statusParts: string[] = [];
+      if (data.statuses?.ranked) {
+        statusParts.push(`Ranked: ${data.statuses.ranked}`);
+      }
+      if (data.statuses?.avgPlacement) {
+        statusParts.push(`Avg: ${data.statuses.avgPlacement}`);
+      }
+      if (data.statuses?.live) {
+        statusParts.push(`Live: ${data.statuses.live}`);
+      }
+      const statusDetail = statusParts.length > 0 ? ` (${statusParts.join(", ")})` : "";
       if (data.warning) {
-        setStatus(`Sync completato con avviso: ${data.warning}`);
+        setStatus(`Sync completato con avviso: ${data.warning}${statusDetail}`);
       } else {
-        setStatus("Sync completato.");
+        setStatus(`Sync completato.${statusDetail}`);
       }
       await loadPlayers();
     } catch {
@@ -159,6 +171,7 @@ export function AdminDashboard() {
   };
 
   const batchSync = async () => {
+    setStatus("Sync batch in corso...");
     try {
       const response = await adminFetch("/api/admin/sync-players", {
         method: "POST",
@@ -182,8 +195,12 @@ export function AdminDashboard() {
         return;
       }
 
+      const warnings =
+        data.results?.filter((entry) => entry.warning).length ?? 0;
       setStatus(
-        `Sync batch completato: ${data.total ?? 0} player processati.`
+        `Sync batch completato: ${data.total ?? 0} player processati${
+          warnings ? `, avvisi: ${warnings}` : ""
+        }.`
       );
       await loadPlayers();
     } catch {
@@ -198,6 +215,7 @@ export function AdminDashboard() {
       return;
     }
 
+    setStatus("Sync completo in corso...");
     try {
       const response = await adminFetch("/api/admin/sync-players", {
         method: "POST",
@@ -237,8 +255,12 @@ export function AdminDashboard() {
         return;
       }
 
+      const warnings =
+        data.results?.filter((entry) => entry.warning).length ?? 0;
       setStatus(
-        `Sync completo: ${data.total ?? limit} player + leaderboard (${leaderboardData.total ?? 0}).`
+        `Sync completo: ${data.total ?? limit} player + leaderboard (${leaderboardData.total ?? 0})${
+          warnings ? `, avvisi: ${warnings}` : ""
+        }.`
       );
       await loadPlayers();
     } catch {
@@ -247,6 +269,7 @@ export function AdminDashboard() {
   };
 
   const syncLeaderboard = async () => {
+    setStatus("Leaderboard sync in corso...");
     try {
       const response = await adminFetch("/api/admin/sync-leaderboard", {
         method: "POST",
@@ -344,6 +367,7 @@ export function AdminDashboard() {
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg">
         <h2 className="text-xl font-semibold text-white">Player tracciati</h2>
+        {status ? <p className="mt-2 text-sm text-rose-400">{status}</p> : null}
         <div className="mt-4 space-y-3">
           <button
             type="button"

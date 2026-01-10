@@ -162,12 +162,17 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const slug = params.slug;
-    const cached = getPlayerCache<PlayerResponse>(slug);
+    const slugParam = params.slug;
+    const cacheKey = slugParam.trim().toLowerCase();
+    const url = new URL(request.url);
+    const bypassCache =
+      url.searchParams.get("refresh") === "1" ||
+      request.headers.get("x-bypass-cache") === "1";
+    const cached = bypassCache ? null : getPlayerCache<PlayerResponse>(cacheKey);
     if (cached) {
       return NextResponse.json(cached, {
         headers: {
-          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
           "x-player-cache": "HIT"
         }
       });
@@ -175,7 +180,7 @@ export async function GET(
 
     const startedAt = Date.now();
     const dbStart = Date.now();
-    const player = await getTrackedPlayerBySlug(slug);
+    const player = await getTrackedPlayerBySlug(cacheKey);
     const dbMs = Date.now() - dbStart;
 
     if (!player || !player.is_active) {
@@ -191,9 +196,9 @@ export async function GET(
         favoriteItems: [],
         favoriteTraits: []
       };
-      setPlayerCache(slug, empty);
+      setPlayerCache(cacheKey, empty);
       return NextResponse.json(empty, {
-        headers: { "Cache-Control": "private, max-age=0, must-revalidate" }
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
       });
     }
 
@@ -386,21 +391,38 @@ export async function GET(
     if (process.env.NODE_ENV !== "production") {
       console.info(
         "[player] slug=%s db=%dms total=%dms",
-        slug,
+        cacheKey,
         dbMs,
         Date.now() - startedAt
       );
     }
 
+    const lastUpdatedMs = player.riot_data_updated_at
+      ? new Date(player.riot_data_updated_at).getTime()
+      : 0;
+    const refreshTtlMs = 5 * 60_000;
+    const isStale = !lastUpdatedMs || Date.now() - lastUpdatedMs > refreshTtlMs;
     const shouldRefresh =
       payload.needsRankedRefresh ||
       payload.needsMatchesRefresh ||
-      payload.needsProfileRefresh;
-    if (shouldRefresh && shouldTriggerPlayerRefresh(slug, 5 * 60_000)) {
+      payload.needsProfileRefresh ||
+      isStale;
+    if (shouldRefresh && shouldTriggerPlayerRefresh(cacheKey, refreshTtlMs)) {
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[player] background refresh queued", {
+          slug: cacheKey,
+          stale: isStale
+        });
+      }
       void (async () => {
         try {
           await syncTrackedPlayerById(player.id, { force: true });
-          invalidatePlayerCache(slug);
+          invalidatePlayerCache(cacheKey);
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[player] background refresh completed", {
+              slug: cacheKey
+            });
+          }
         } catch (err) {
           if (process.env.NODE_ENV !== "production") {
             console.info("[player] refresh skipped", err instanceof Error ? err.message : err);
@@ -409,11 +431,11 @@ export async function GET(
       })();
     }
 
-    setPlayerCache(slug, payload);
+    setPlayerCache(cacheKey, payload);
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "private, max-age=0, must-revalidate",
-        "x-player-cache": "MISS"
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "x-player-cache": bypassCache ? "BYPASS" : "MISS"
       }
     });
   } catch (error) {

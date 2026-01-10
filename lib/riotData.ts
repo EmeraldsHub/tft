@@ -301,6 +301,10 @@ export async function syncTrackedPlayerById(
         ? "updated"
         : "cached";
 
+  if (player.puuid) {
+    await cacheRecentMatchesForPuuid(player.puuid, 10);
+  }
+
   return {
     updated: true,
     warning: resolved.warning ?? null,

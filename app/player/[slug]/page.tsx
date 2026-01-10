@@ -15,9 +15,15 @@ interface PlayerPageProps {
   params: {
     slug: string;
   };
+  searchParams?: {
+    refresh?: string;
+  };
 }
 
-export default async function PlayerPage({ params }: PlayerPageProps) {
+export default async function PlayerPage({
+  params,
+  searchParams
+}: PlayerPageProps) {
   const headerList = headers();
   const host =
     headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "";
@@ -30,10 +36,11 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       ? `https://${fallbackHost.replace(/^https?:\/\//, "")}`
       : "";
 
+  const refreshQuery = searchParams?.refresh === "1" ? "?refresh=1" : "";
   const payload = await fetch(
-    `${baseUrl}/api/player/${encodeURIComponent(params.slug)}`,
+    `${baseUrl}/api/player/${encodeURIComponent(params.slug)}${refreshQuery}`,
     {
-    cache: "no-store"
+      cache: "no-store"
     }
   )
     .then(async (response) =>

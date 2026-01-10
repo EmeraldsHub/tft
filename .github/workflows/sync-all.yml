@@ -1,0 +1,46 @@
+name: Sync All Players
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync-all endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ secrets.SYNC_BASE_URL }}
+        run: |
+         set -euo pipefail
+
+  if [ -z "${CRON_SECRET:-}" ]; then
+    echo "CRON_SECRET is not set" >&2
+    exit 1
+  fi
+  if [ -z "${BASE_URL:-}" ]; then
+    echo "SYNC_BASE_URL is not set" >&2
+    exit 1
+  fi
+
+  # remove trailing slash if present
+  BASE_URL="${BASE_URL%/}"
+
+  URL="${BASE_URL}/api/admin/cron/sync-all"
+  echo "Calling: ${URL}"
+
+  curl --fail-with-body -sS -X POST "${URL}" \
+    -H "X-Cron-Secret: ${CRON_SECRET}" \
+    -H "Content-Type: application/json" \
+    --max-time 60 \
+    --retry 3 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    -d '{"limit":10}' \
+    | tee response.json
+
+  echo ""
+  echo "Response saved to response.json"
+  cat response.json

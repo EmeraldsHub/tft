@@ -48,7 +48,9 @@ export function PlayerSyncButton({ playerId, className }: Props) {
       );
     }
     setIsLoading(false);
-    window.location.reload();
+    const current = new URL(window.location.href);
+    current.searchParams.set("refresh", "1");
+    window.location.href = current.toString();
   };
 
   return (

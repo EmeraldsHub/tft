@@ -1,0 +1,160 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+import { acquireJobLock, releaseJobLock } from "@/lib/jobLock";
+import { invalidateAllPlayerCache } from "@/lib/playerCache";
+import { invalidateLeaderboardCache } from "@/lib/leaderboardCache";
+import { cacheRecentMatchesForPuuid, syncTrackedPlayerById } from "@/lib/riotData";
+import { getSummonerByPuuid, getRiotRateLimitFlag, resetRiotRateLimitFlag } from "@/lib/riot";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { NextResponse } from "next/server";
+
+type CronResult = {
+  id: string;
+  riot_id: string;
+  status: "updated" | "skipped" | "failed" | "rate_limited";
+  warning?: string | null;
+};
+
+function ensureCron(request: Request) {
+  const secret = request.headers.get("x-cron-secret") ?? "";
+  return Boolean(process.env.CRON_SECRET) && secret === process.env.CRON_SECRET;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function POST(request: Request) {
+  if (!ensureCron(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const lock = await acquireJobLock("sync_all", 2 * 60_000);
+  if (!lock.ok) {
+    return NextResponse.json(
+      { error: "Job locked", lockedUntil: lock.lockedUntil },
+      { status: 409 }
+    );
+  }
+
+  const startedAt = Date.now();
+  const results: CronResult[] = [];
+  let rateLimited = false;
+
+  try {
+    let body: { limit?: number } = {};
+    try {
+      body = (await request.json()) as { limit?: number };
+    } catch {
+      body = {};
+    }
+
+    const limit = typeof body.limit === "number" && body.limit > 0 ? body.limit : 10;
+
+    const { data, error } = await supabaseAdmin
+      .from("tracked_players")
+      .select("id, riot_id, puuid, summoner_id, is_active, riot_data_updated_at")
+      .eq("is_active", true)
+      .order("riot_data_updated_at", { ascending: true, nullsFirst: true })
+      .limit(limit);
+
+    if (error) {
+      throw error;
+    }
+
+    const players = data ?? [];
+
+    for (let index = 0; index < players.length; index += 1) {
+      const player = players[index];
+      resetRiotRateLimitFlag();
+
+      try {
+        const syncResult = await syncTrackedPlayerById(player.id, { force: true });
+        if (!syncResult.updated) {
+          results.push({
+            id: player.id,
+            riot_id: player.riot_id,
+            status: "skipped",
+            warning: syncResult.warning ?? null
+          });
+        } else {
+          const { data: refreshed } = await supabaseAdmin
+            .from("tracked_players")
+            .select("puuid, summoner_id")
+            .eq("id", player.id)
+            .maybeSingle();
+
+          if (refreshed?.puuid && !refreshed.summoner_id) {
+            const summoner = await getSummonerByPuuid(refreshed.puuid);
+            if (summoner?.id) {
+              await supabaseAdmin
+                .from("tracked_players")
+                .update({ summoner_id: summoner.id })
+                .eq("id", player.id);
+            }
+          }
+
+          if (refreshed?.puuid) {
+            await cacheRecentMatchesForPuuid(refreshed.puuid, 10);
+          }
+
+          results.push({
+            id: player.id,
+            riot_id: player.riot_id,
+            status: "updated",
+            warning: syncResult.warning ?? null
+          });
+        }
+      } catch (err) {
+        results.push({
+          id: player.id,
+          riot_id: player.riot_id,
+          status: "failed",
+          warning: err instanceof Error ? err.message : "Sync failed."
+        });
+      }
+
+      if (getRiotRateLimitFlag()) {
+        rateLimited = true;
+        for (let remaining = index + 1; remaining < players.length; remaining += 1) {
+          const skippedPlayer = players[remaining];
+          results.push({
+            id: skippedPlayer.id,
+            riot_id: skippedPlayer.riot_id,
+            status: "rate_limited"
+          });
+        }
+        break;
+      }
+
+      if (index < players.length - 1) {
+        await sleep(200);
+      }
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      console.info(
+        "[cron sync-all] processed=%d rateLimited=%s totalMs=%d",
+        results.length,
+        rateLimited,
+        Date.now() - startedAt
+      );
+    }
+
+    invalidateLeaderboardCache();
+    invalidateAllPlayerCache();
+
+    return NextResponse.json({
+      total: results.length,
+      results,
+      rateLimited
+    });
+  } finally {
+    try {
+      await releaseJobLock("sync_all");
+    } catch {
+      // Best effort release.
+    }
+  }
+}
