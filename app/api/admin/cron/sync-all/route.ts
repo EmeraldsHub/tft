@@ -16,9 +16,35 @@ type CronResult = {
   warning?: string | null;
 };
 
+function getCronSecret() {
+  return (
+    process.env.CRON_SECRET ??
+    process.env.CRON_SYNC_SECRET ??
+    process.env.CRON_JOB_SECRET ??
+    null
+  )?.trim() ?? null;
+}
+
+function getProvidedSecret(request: Request) {
+  const headerDirect =
+    request.headers.get("x-cron-secret") ??
+    request.headers.get("X-Cron-Secret") ??
+    null;
+  if (headerDirect?.trim()) {
+    return { secret: headerDirect.trim(), usedAuthBearer: false };
+  }
+  const auth = request.headers.get("authorization") ?? "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (match?.[1]) {
+    return { secret: match[1].trim(), usedAuthBearer: true };
+  }
+  return { secret: null, usedAuthBearer: false };
+}
+
 function ensureCron(request: Request) {
-  const secret = request.headers.get("x-cron-secret") ?? "";
-  return Boolean(process.env.CRON_SECRET) && secret === process.env.CRON_SECRET;
+  const expected = getCronSecret();
+  const { secret: provided } = getProvidedSecret(request);
+  return Boolean(expected && provided && expected === provided);
 }
 
 function sleep(ms: number) {
@@ -26,8 +52,55 @@ function sleep(ms: number) {
 }
 
 export async function POST(request: Request) {
-  if (!ensureCron(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const url = new URL(request.url);
+  if (url.searchParams.get("debug") === "1") {
+    const expected = (
+      process.env.CRON_SECRET ??
+      process.env.CRON_SYNC_SECRET ??
+      process.env.CRON_JOB_SECRET ??
+      ""
+    ).trim();
+    const header = (request.headers.get("x-cron-secret") ?? "").trim();
+    const auth = (request.headers.get("authorization") ?? "").trim();
+    const bearer = auth.toLowerCase().startsWith("bearer ")
+      ? auth.slice(7).trim()
+      : "";
+    const provided = header || bearer;
+    return Response.json(
+      {
+        nodeEnv: process.env.NODE_ENV,
+        hasExpected: Boolean(expected),
+        expectedLength: expected ? expected.length : null,
+        hasHeader: Boolean(header),
+        headerLength: header ? header.length : null,
+        hasAuth: Boolean(auth),
+        used: header ? "x-cron-secret" : bearer ? "authorization-bearer" : "none",
+        providedLength: provided ? provided.length : null,
+        matched: Boolean(expected && provided && expected === provided)
+      },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  const expected = (
+    process.env.CRON_SECRET ??
+    process.env.CRON_SYNC_SECRET ??
+    process.env.CRON_JOB_SECRET ??
+    ""
+  ).trim();
+  const header = (request.headers.get("x-cron-secret") ?? "").trim();
+  const auth = (request.headers.get("authorization") ?? "").trim();
+  const bearer = auth.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7).trim()
+    : "";
+  const provided = (header || bearer).trim();
+  const matched = Boolean(expected && provided && expected === provided);
+
+  if (!matched) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   const lock = await acquireJobLock("sync_all", 2 * 60_000);
@@ -149,6 +222,8 @@ export async function POST(request: Request) {
       total: results.length,
       results,
       rateLimited
+    }, {
+      headers: { "Cache-Control": "no-store" }
     });
   } finally {
     try {

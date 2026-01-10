@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type TrackedPlayer = {
   id: string;
@@ -37,10 +37,13 @@ export function AdminDashboard() {
   const [status, setStatus] = useState<string | null>(null);
   const [imageEdits, setImageEdits] = useState<Record<string, string>>({});
 
-  const adminFetch = (input: RequestInfo, init?: RequestInit) =>
-    fetch(input, { ...init, credentials: "include" });
+  const adminFetch = useCallback(
+    (input: RequestInfo, init?: RequestInit) =>
+      fetch(input, { ...init, credentials: "include" }),
+    []
+  );
 
-  const loadPlayers = async () => {
+  const loadPlayers = useCallback(async () => {
     try {
       const response = await adminFetch("/api/admin/tracked-players");
       if (!response.ok) {
@@ -53,11 +56,11 @@ export function AdminDashboard() {
     } catch {
       setStatus("Impossibile caricare i player.");
     }
-  };
+  }, [adminFetch]);
 
   useEffect(() => {
     void loadPlayers();
-  }, []);
+  }, [loadPlayers]);
 
   const handleAddPlayer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

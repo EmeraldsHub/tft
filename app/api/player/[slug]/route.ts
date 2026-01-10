@@ -162,12 +162,16 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
+    const isProd = (process.env.NODE_ENV ?? "") === "production";
     const slugParam = params.slug;
     const cacheKey = slugParam.trim().toLowerCase();
     const url = new URL(request.url);
     const bypassCache =
       url.searchParams.get("refresh") === "1" ||
       request.headers.get("x-bypass-cache") === "1";
+    if (!isProd) {
+      console.info("[player] request", { slug: cacheKey, bypassCache });
+    }
     const cached = bypassCache ? null : getPlayerCache<PlayerResponse>(cacheKey);
     if (cached) {
       return NextResponse.json(cached, {
@@ -407,8 +411,8 @@ export async function GET(
       payload.needsMatchesRefresh ||
       payload.needsProfileRefresh ||
       isStale;
-    if (shouldRefresh && shouldTriggerPlayerRefresh(cacheKey, refreshTtlMs)) {
-      if (process.env.NODE_ENV !== "production") {
+    if (!isProd && shouldRefresh && shouldTriggerPlayerRefresh(cacheKey, refreshTtlMs)) {
+      if (!isProd) {
         console.info("[player] background refresh queued", {
           slug: cacheKey,
           stale: isStale
@@ -418,13 +422,13 @@ export async function GET(
         try {
           await syncTrackedPlayerById(player.id, { force: true });
           invalidatePlayerCache(cacheKey);
-          if (process.env.NODE_ENV !== "production") {
+          if (!isProd) {
             console.info("[player] background refresh completed", {
               slug: cacheKey
             });
           }
         } catch (err) {
-          if (process.env.NODE_ENV !== "production") {
+          if (!isProd) {
             console.info("[player] refresh skipped", err instanceof Error ? err.message : err);
           }
         }

@@ -1,7 +1,14 @@
 import { AdminDashboard } from "@/components/AdminDashboard";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export default function AdminPage() {
+  const session = cookies().get("admin_session")?.value ?? null;
+  if (session !== "authenticated") {
+    redirect("/admin/login");
+  }
+
   return (
     <main className="min-h-screen px-6 py-16">
       <div className="mx-auto max-w-4xl space-y-6">

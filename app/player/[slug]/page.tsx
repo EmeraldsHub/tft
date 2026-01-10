@@ -1,4 +1,6 @@
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 import { PlayerSyncButton } from "@/components/PlayerSyncButton";
 import { RankIcon } from "@/components/RankIcon";
@@ -40,7 +42,8 @@ export default async function PlayerPage({
   const payload = await fetch(
     `${baseUrl}/api/player/${encodeURIComponent(params.slug)}${refreshQuery}`,
     {
-      cache: "no-store"
+      cache: "no-store",
+      headers: refreshQuery ? { "x-bypass-cache": "1" } : undefined
     }
   )
     .then(async (response) =>
