@@ -13,6 +13,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Stat } from "@/components/ui/Stat";
 import Image from "next/image";
 import { headers } from "next/headers";
+import { unstable_noStore as noStore } from "next/cache";
 
 interface PlayerPageProps {
   params: {
@@ -27,6 +28,7 @@ export default async function PlayerPage({
   params,
   searchParams
 }: PlayerPageProps) {
+  noStore();
   const headerList = headers();
   const host =
     headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "";
