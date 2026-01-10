@@ -107,7 +107,7 @@ export async function POST(request: Request) {
   if (!lock.ok) {
     return NextResponse.json(
       { error: "Job locked", lockedUntil: lock.lockedUntil },
-      { status: 409 }
+      { status: 409, headers: { "Cache-Control": "no-store" } }
     );
   }
 
@@ -218,13 +218,24 @@ export async function POST(request: Request) {
     invalidateLeaderboardCache();
     invalidateAllPlayerCache();
 
-    return NextResponse.json({
-      total: results.length,
-      results,
-      rateLimited
-    }, {
-      headers: { "Cache-Control": "no-store" }
-    });
+    return NextResponse.json(
+      {
+        total: results.length,
+        results,
+        rateLimited
+      },
+      {
+        headers: { "Cache-Control": "no-store" }
+      }
+    );
+  } catch (err) {
+    console.error("[cron sync-all] failed", err);
+    return NextResponse.json(
+      {
+        error: err instanceof Error ? err.message : "Sync failed."
+      },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   } finally {
     try {
       await releaseJobLock("sync_all");
