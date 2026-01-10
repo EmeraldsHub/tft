@@ -3,6 +3,7 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const dynamicParams = true;
 
+import { PlayerAutoRefresh } from "@/components/PlayerAutoRefresh";
 import { PlayerSyncButton } from "@/components/PlayerSyncButton";
 import { RankIcon } from "@/components/RankIcon";
 import { MatchHistoryAccordion } from "@/components/MatchHistoryAccordion";
@@ -210,10 +211,22 @@ export default async function PlayerPage({
   const profileImageUrl = player.profile_image_url ?? null;
 
   const hasPuuid = Boolean(player.puuid);
+  const refreshTtlMs = 5 * 60_000;
+  const isStale = !lastUpdatedMs || Date.now() - lastUpdatedMs > refreshTtlMs;
+  const needsRankedRefresh =
+    "needsRankedRefresh" in payload ? payload.needsRankedRefresh === true : false;
+  const needsMatchesRefresh =
+    "needsMatchesRefresh" in payload ? payload.needsMatchesRefresh === true : false;
+  const needsProfileRefresh =
+    "needsProfileRefresh" in payload ? payload.needsProfileRefresh === true : false;
+  const shouldAutoRefresh = Boolean(
+    needsRankedRefresh || needsMatchesRefresh || needsProfileRefresh || isStale
+  );
 
   return (
     <main className="min-h-screen py-10">
       <Container className="space-y-8">
+        <PlayerAutoRefresh shouldRefresh={shouldAutoRefresh} />
         <div className="flex flex-col gap-4">
           <SectionTitle title="Player Profile" />
           <div className="flex flex-wrap items-center gap-4">
