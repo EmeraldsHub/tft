@@ -90,6 +90,11 @@ type FavoriteUnit = {
   count: number;
 };
 
+function isAdminRequest(request: Request) {
+  const cookie = request.headers.get("cookie") ?? "";
+  return cookie.includes("admin_session=authenticated");
+}
+
 async function hydratePreviewIcons(
   preview: PlayerPreview
 ): Promise<PlayerPreview> {
@@ -169,6 +174,8 @@ export async function GET(
     const bypassCache =
       url.searchParams.get("refresh") === "1" ||
       request.headers.get("x-bypass-cache") === "1";
+    const wantsRefresh = url.searchParams.get("refresh") === "1";
+    const isAdmin = isAdminRequest(request);
     if (!isProd) {
       console.info("[player] request", { slug: cacheKey, bypassCache });
     }
@@ -184,7 +191,21 @@ export async function GET(
 
     const startedAt = Date.now();
     const dbStart = Date.now();
-    const player = await getTrackedPlayerBySlug(cacheKey);
+    let player = await getTrackedPlayerBySlug(cacheKey);
+    if (player && wantsRefresh && isAdmin) {
+      try {
+        await syncTrackedPlayerById(player.id, { force: true });
+        invalidatePlayerCache(cacheKey);
+        player = await getTrackedPlayerBySlug(cacheKey);
+      } catch (err) {
+        if (!isProd) {
+          console.info(
+            "[player] manual refresh failed",
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
+    }
     const dbMs = Date.now() - dbStart;
 
     if (!player || !player.is_active) {
