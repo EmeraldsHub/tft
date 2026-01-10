@@ -182,8 +182,17 @@ export default async function PlayerPage({
       })
     : null;
 
-  const lastUpdated =
-    player.avg_placement_updated_at ?? player.riot_data_updated_at ?? null;
+  const avgUpdatedAt = player.avg_placement_updated_at
+    ? new Date(player.avg_placement_updated_at).getTime()
+    : null;
+  const riotUpdatedAt = player.riot_data_updated_at
+    ? new Date(player.riot_data_updated_at).getTime()
+    : null;
+  const lastUpdatedMs =
+    avgUpdatedAt !== null && riotUpdatedAt !== null
+      ? Math.max(avgUpdatedAt, riotUpdatedAt)
+      : avgUpdatedAt ?? riotUpdatedAt ?? null;
+  const lastUpdated = lastUpdatedMs ? new Date(lastUpdatedMs).toISOString() : null;
   const lastUpdatedLabel = lastUpdated
     ? new Date(lastUpdated).toLocaleString("it-IT", {
         day: "2-digit",
