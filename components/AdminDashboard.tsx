@@ -17,6 +17,18 @@ type TrackedPlayer = {
   profile_image_url: string | null;
 };
 
+type SyncResponse = {
+  warning?: string | null;
+  error?: string;
+  statuses?: {
+    ranked?: string;
+    avgPlacement?: string;
+    matchHistory?: string;
+    leaderboard?: string;
+    live?: string;
+  };
+};
+
 export function AdminDashboard() {
   const [players, setPlayers] = useState<TrackedPlayer[]>([]);
   const [riotId, setRiotId] = useState("");
@@ -138,10 +150,7 @@ export function AdminDashboard() {
         body: JSON.stringify({ id: player.id })
       });
 
-      const data = (await response.json()) as {
-        warning?: string | null;
-        error?: string;
-      };
+      const data = (await response.json()) as SyncResponse;
 
       if (!response.ok) {
         setStatus(data.error ?? "Errore durante il sync.");
