@@ -191,8 +191,24 @@ export function AdminDashboard() {
       return;
     }
 
+    const leaderboardResponse = await fetch("/api/admin/sync-leaderboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ concurrency: 5 })
+    });
+    const leaderboardData = (await leaderboardResponse.json()) as {
+      total?: number;
+      error?: string;
+    };
+    if (!leaderboardResponse.ok) {
+      setStatus(
+        leaderboardData.error ?? "Errore durante il sync leaderboard."
+      );
+      return;
+    }
+
     setStatus(
-      `Sync completo: ${data.total ?? limit} player processati.`
+      `Sync completo: ${data.total ?? limit} player + leaderboard (${leaderboardData.total ?? 0}).`
     );
     await loadPlayers();
   };
