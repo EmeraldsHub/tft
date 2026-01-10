@@ -54,6 +54,7 @@ export default async function PlayerPage({
         ? ((await response.json()) as {
         player: {
           id: string;
+          slug: string;
           riot_id: string;
           region: string;
           puuid: string | null;
@@ -223,6 +224,7 @@ export default async function PlayerPage({
                 {liveStatus.inGame ? <Badge variant="green">Live</Badge> : null}
                 <PlayerSyncButton
                   playerId={player.id}
+                  playerSlug={player.slug}
                   className="flex items-center gap-2"
                 />
               </div>
@@ -243,7 +245,7 @@ export default async function PlayerPage({
                 Riot data is not available yet for this player. Run a sync to
                 fetch ranked and match stats.
               </p>
-              <PlayerSyncButton playerId={player.id} />
+              <PlayerSyncButton playerId={player.id} playerSlug={player.slug} />
             </CardContent>
           </Card>
         ) : (

@@ -4,10 +4,11 @@ import { useState } from "react";
 
 type Props = {
   playerId: string;
+  playerSlug?: string;
   className?: string;
 };
 
-export function PlayerSyncButton({ playerId, className }: Props) {
+export function PlayerSyncButton({ playerId, playerSlug, className }: Props) {
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -18,7 +19,7 @@ export function PlayerSyncButton({ playerId, className }: Props) {
     const response = await fetch("/api/admin/sync-player", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: playerId })
+      body: JSON.stringify({ id: playerId, slug: playerSlug })
     });
 
     const data = (await response.json()) as {
