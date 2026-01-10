@@ -25,15 +25,22 @@ export function AdminDashboard() {
   const [status, setStatus] = useState<string | null>(null);
   const [imageEdits, setImageEdits] = useState<Record<string, string>>({});
 
-  const loadPlayers = async () => {
-    const response = await fetch("/api/admin/tracked-players");
-    if (!response.ok) {
-      setStatus("Impossibile caricare i player.");
-      return;
-    }
+  const adminFetch = (input: RequestInfo, init?: RequestInit) =>
+    fetch(input, { ...init, credentials: "include" });
 
-    const data = (await response.json()) as { results: TrackedPlayer[] };
-    setPlayers(data.results);
+  const loadPlayers = async () => {
+    try {
+      const response = await adminFetch("/api/admin/tracked-players");
+      if (!response.ok) {
+        setStatus("Impossibile caricare i player.");
+        return;
+      }
+
+      const data = (await response.json()) as { results: TrackedPlayer[] };
+      setPlayers(data.results);
+    } catch {
+      setStatus("Impossibile caricare i player.");
+    }
   };
 
   useEffect(() => {
@@ -45,121 +52,143 @@ export function AdminDashboard() {
     setStatus(null);
 
     const trimmedImageUrl = profileImageUrl.trim();
-    const response = await fetch("/api/admin/tracked-players", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        riot_id: riotId,
-        region,
-        profile_image_url: trimmedImageUrl || null
-      })
-    });
+    try {
+      const response = await adminFetch("/api/admin/tracked-players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          riot_id: riotId,
+          region,
+          profile_image_url: trimmedImageUrl || null
+        })
+      });
 
-    const data = (await response.json()) as {
-      result?: TrackedPlayer;
-      warning?: string | null;
-      error?: string;
-    };
+      const data = (await response.json()) as {
+        result?: TrackedPlayer;
+        warning?: string | null;
+        error?: string;
+      };
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Errore durante l'aggiunta.");
-      return;
+      if (!response.ok) {
+        setStatus(data.error ?? "Errore durante l'aggiunta.");
+        return;
+      }
+
+      setRiotId("");
+      setRegion("EUW1");
+      setProfileImageUrl("");
+      if (data.warning) {
+        setStatus(`Player aggiunto. Sync Riot fallita: ${data.warning}`);
+      } else {
+        setStatus("Player aggiunto.");
+      }
+      await loadPlayers();
+    } catch {
+      setStatus("Errore durante l'aggiunta.");
     }
-
-    setRiotId("");
-    setRegion("EUW1");
-    setProfileImageUrl("");
-    if (data.warning) {
-      setStatus(`Player aggiunto. Sync Riot fallita: ${data.warning}`);
-    }
-    await loadPlayers();
   };
 
   const togglePlayer = async (player: TrackedPlayer) => {
-    const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_active: !player.is_active })
-    });
+    try {
+      const response = await adminFetch(`/api/admin/tracked-players/${player.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !player.is_active })
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setStatus("Errore durante l'aggiornamento.");
+        return;
+      }
+
+      await loadPlayers();
+    } catch {
       setStatus("Errore durante l'aggiornamento.");
-      return;
     }
-
-    await loadPlayers();
   };
 
   const invalidateLeaderboardCache = async () => {
-    await fetch("/api/admin/invalidate-cache", { method: "POST" });
+    await adminFetch("/api/admin/invalidate-cache", { method: "POST" });
   };
 
   const deletePlayer = async (player: TrackedPlayer) => {
-    const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
-      method: "DELETE"
-    });
+    try {
+      const response = await adminFetch(`/api/admin/tracked-players/${player.id}`, {
+        method: "DELETE"
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setStatus("Errore durante l'eliminazione.");
+        return;
+      }
+
+      await invalidateLeaderboardCache();
+      await loadPlayers();
+    } catch {
       setStatus("Errore durante l'eliminazione.");
-      return;
     }
-
-    await invalidateLeaderboardCache();
-    await loadPlayers();
   };
 
   const syncPlayer = async (player: TrackedPlayer) => {
-    const response = await fetch("/api/admin/sync-player", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: player.id })
-    });
+    try {
+      const response = await adminFetch("/api/admin/sync-player", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: player.id })
+      });
 
-    const data = (await response.json()) as {
-      warning?: string | null;
-      error?: string;
-    };
+      const data = (await response.json()) as {
+        warning?: string | null;
+        error?: string;
+      };
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Errore durante il sync.");
-      return;
+      if (!response.ok) {
+        setStatus(data.error ?? "Errore durante il sync.");
+        return;
+      }
+
+      if (data.warning) {
+        setStatus(`Sync completato con avviso: ${data.warning}`);
+      } else {
+        setStatus("Sync completato.");
+      }
+      await loadPlayers();
+    } catch {
+      setStatus("Errore durante il sync.");
     }
-
-    if (data.warning) {
-      setStatus(`Sync completato con avviso: ${data.warning}`);
-    } else {
-      setStatus("Sync completato.");
-    }
-    await loadPlayers();
   };
 
   const batchSync = async () => {
-    const response = await fetch("/api/admin/sync-players", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limit: 10 })
-    });
+    try {
+      const response = await adminFetch("/api/admin/sync-players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 10 })
+      });
 
-    const data = (await response.json()) as {
-      total?: number;
-      results?: Array<{
-        id: string;
-        riot_id: string;
-        status: string;
-        warning?: string | null;
-      }>;
-      error?: string;
-    };
+      const data = (await response.json()) as {
+        total?: number;
+        results?: Array<{
+          id: string;
+          riot_id: string;
+          status: string;
+          warning?: string | null;
+        }>;
+        error?: string;
+      };
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Errore durante il sync.");
-      return;
+      if (!response.ok) {
+        setStatus(data.error ?? "Errore durante il sync.");
+        return;
+      }
+
+      setStatus(
+        `Sync batch completato: ${data.total ?? 0} player processati.`
+      );
+      await loadPlayers();
+    } catch {
+      setStatus("Errore durante il sync.");
     }
-
-    setStatus(
-      `Sync batch completato: ${data.total ?? 0} player processati.`
-    );
-    await loadPlayers();
   };
 
   const syncAllPlayers = async () => {
@@ -169,88 +198,100 @@ export function AdminDashboard() {
       return;
     }
 
-    const response = await fetch("/api/admin/sync-players", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limit })
-    });
+    try {
+      const response = await adminFetch("/api/admin/sync-players", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit })
+      });
 
-    const data = (await response.json()) as {
-      total?: number;
-      results?: Array<{
-        id: string;
-        riot_id: string;
-        status: string;
-        warning?: string | null;
-      }>;
-      error?: string;
-    };
+      const data = (await response.json()) as {
+        total?: number;
+        results?: Array<{
+          id: string;
+          riot_id: string;
+          status: string;
+          warning?: string | null;
+        }>;
+        error?: string;
+      };
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Errore durante il sync.");
-      return;
-    }
+      if (!response.ok) {
+        setStatus(data.error ?? "Errore durante il sync.");
+        return;
+      }
 
-    const leaderboardResponse = await fetch("/api/admin/sync-leaderboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ concurrency: 5 })
-    });
-    const leaderboardData = (await leaderboardResponse.json()) as {
-      total?: number;
-      error?: string;
-    };
-    if (!leaderboardResponse.ok) {
+      const leaderboardResponse = await adminFetch("/api/admin/sync-leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concurrency: 5 })
+      });
+      const leaderboardData = (await leaderboardResponse.json()) as {
+        total?: number;
+        error?: string;
+      };
+      if (!leaderboardResponse.ok) {
+        setStatus(
+          leaderboardData.error ?? "Errore durante il sync leaderboard."
+        );
+        return;
+      }
+
       setStatus(
-        leaderboardData.error ?? "Errore durante il sync leaderboard."
+        `Sync completo: ${data.total ?? limit} player + leaderboard (${leaderboardData.total ?? 0}).`
       );
-      return;
+      await loadPlayers();
+    } catch {
+      setStatus("Errore durante il sync.");
     }
-
-    setStatus(
-      `Sync completo: ${data.total ?? limit} player + leaderboard (${leaderboardData.total ?? 0}).`
-    );
-    await loadPlayers();
   };
 
   const syncLeaderboard = async () => {
-    const response = await fetch("/api/admin/sync-leaderboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ concurrency: 5 })
-    });
+    try {
+      const response = await adminFetch("/api/admin/sync-leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concurrency: 5 })
+      });
 
-    const data = (await response.json()) as {
-      total?: number;
-      results?: Array<{ id: string; riot_id: string; status: string }>;
-      error?: string;
-    };
+      const data = (await response.json()) as {
+        total?: number;
+        results?: Array<{ id: string; riot_id: string; status: string }>;
+        error?: string;
+      };
 
-    if (!response.ok) {
-      setStatus(data.error ?? "Errore durante il sync leaderboard.");
-      return;
+      if (!response.ok) {
+        setStatus(data.error ?? "Errore durante il sync leaderboard.");
+        return;
+      }
+
+      setStatus(`Leaderboard sync completato: ${data.total ?? 0} player.`);
+      await loadPlayers();
+    } catch {
+      setStatus("Errore durante il sync leaderboard.");
     }
-
-    setStatus(`Leaderboard sync completato: ${data.total ?? 0} player.`);
-    await loadPlayers();
   };
 
   const saveProfileImage = async (player: TrackedPlayer) => {
     const nextUrl = (imageEdits[player.id] ?? player.profile_image_url ?? "").trim();
-    const response = await fetch(`/api/admin/tracked-players/${player.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile_image_url: nextUrl || null })
-    });
+    try {
+      const response = await adminFetch(`/api/admin/tracked-players/${player.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_image_url: nextUrl || null })
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setStatus("Errore durante il salvataggio immagine.");
+        return;
+      }
+
+      setStatus("Immagine aggiornata.");
+      await invalidateLeaderboardCache();
+      await loadPlayers();
+    } catch {
       setStatus("Errore durante il salvataggio immagine.");
-      return;
     }
-
-    setStatus("Immagine aggiornata.");
-    await invalidateLeaderboardCache();
-    await loadPlayers();
   };
 
   const formatDate = (value: string | null) => {
