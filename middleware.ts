@@ -7,8 +7,13 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAdminRoute = pathname.startsWith("/admin");
   const isAdminApiRoute = pathname.startsWith("/api/admin");
+  const isCronApiRoute = pathname.startsWith("/api/admin/cron");
 
   if (!isAdminRoute && !isAdminApiRoute) {
+    return NextResponse.next();
+  }
+
+  if (isCronApiRoute) {
     return NextResponse.next();
   }
 
