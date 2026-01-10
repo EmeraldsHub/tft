@@ -432,7 +432,7 @@ export async function GET(
       payload.needsMatchesRefresh ||
       payload.needsProfileRefresh ||
       isStale;
-    if (!isProd && shouldRefresh && shouldTriggerPlayerRefresh(cacheKey, refreshTtlMs)) {
+    if (shouldRefresh && shouldTriggerPlayerRefresh(cacheKey, refreshTtlMs)) {
       if (!isProd) {
         console.info("[player] background refresh queued", {
           slug: cacheKey,
