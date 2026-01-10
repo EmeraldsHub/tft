@@ -174,12 +174,13 @@ export async function GET(
     const bypassCache =
       url.searchParams.get("refresh") === "1" ||
       request.headers.get("x-bypass-cache") === "1";
+    const useCache = !isProd && !bypassCache;
     const wantsRefresh = url.searchParams.get("refresh") === "1";
     const isAdmin = isAdminRequest(request);
     if (!isProd) {
       console.info("[player] request", { slug: cacheKey, bypassCache });
     }
-    const cached = bypassCache ? null : getPlayerCache<PlayerResponse>(cacheKey);
+    const cached = useCache ? getPlayerCache<PlayerResponse>(cacheKey) : null;
     if (cached) {
       return NextResponse.json(cached, {
         headers: {
@@ -456,11 +457,13 @@ export async function GET(
       })();
     }
 
-    setPlayerCache(cacheKey, payload);
+    if (!isProd) {
+      setPlayerCache(cacheKey, payload);
+    }
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        "x-player-cache": bypassCache ? "BYPASS" : "MISS"
+        "x-player-cache": useCache ? "MISS" : "BYPASS"
       }
     });
   } catch (error) {
